@@ -836,10 +836,10 @@ void WorldModeler::defineSocialGridMap()
     octree_->getMetricMax(max_bound(0), max_bound(1), max_bound(2));
 
     grid_map::GridMapOctomapConverter::fromOctomap(*octree_, "obstacles", grid_map_, &min_bound, &max_bound);
-
     grid_map_["obstacles"] = 150 * grid_map_["obstacles"];
+    grid_map_["full"] = 1.0 * grid_map_["obstacles"];
 
-    grid_map::Matrix &full_grid_map = grid_map_["obstacles"];
+    grid_map::Matrix &full_grid_map = grid_map_["full"];
     grid_map::Matrix &comfort_grid_map = grid_map_["comfort"];
 
     // !SOCIAL AGENTS GRID MAP PREPARATION
