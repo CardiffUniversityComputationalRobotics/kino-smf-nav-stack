@@ -91,7 +91,7 @@ void SocialHeatmap::updateAgentStatesRelevance(pedsim_msgs::AgentStates agentSta
     {
         auto &relevant_agent_state = agentItem.second;
 
-        smf_move_base_msgs::RelevantAgentState new_relevant_agent_state;
+        kino_smf_move_base_msgs::RelevantAgentState new_relevant_agent_state;
         new_relevant_agent_state.header = relevant_agent_state.header;
         new_relevant_agent_state.agent_state = relevant_agent_state.agent_state;
 
@@ -114,7 +114,7 @@ void SocialHeatmap::addNewAgentStates(pedsim_msgs::AgentStates agent_state)
     for (int i = 0; i < agent_state.agent_states.size(); i++)
     {
 
-        smf_move_base_msgs::RelevantAgentState relevant_agent_state;
+        kino_smf_move_base_msgs::RelevantAgentState relevant_agent_state;
 
         relevant_agent_state.header = agent_state.header;
 

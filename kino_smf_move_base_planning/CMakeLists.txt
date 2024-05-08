@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(smf_move_base_planning)
+project(kino_smf_move_base_planning)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -13,7 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_eigen
   actionlib
   actionlib_msgs
-  smf_move_base_msgs
+  kino_smf_move_base_msgs
   pedsim_msgs
   roslib
   grid_map_core
@@ -34,7 +34,7 @@ find_package(ompl REQUIRED)
 catkin_package(
   INCLUDE_DIRS include
 #  LIBRARIES
-  CATKIN_DEPENDS roscpp roslib rospy sensor_msgs std_msgs tf tf2 tf2_ros actionlib smf_move_base_msgs 
+  CATKIN_DEPENDS roscpp roslib rospy sensor_msgs std_msgs tf tf2 tf2_ros actionlib kino_smf_move_base_msgs 
   # pedsim_msgs
   DEPENDS OMPL
 )
@@ -47,7 +47,7 @@ include_directories(
 link_directories(${OCTOMAP_LIBRARY_DIRS} ${ompl_LIBRARY_DIRS} ${CCD_LIBRARY_DIRS})
 
 
-add_executable(smf_move_base_planner
+add_executable(kino_smf_move_base_planner
 src/planner/RRTstarMod.cpp
 src/planner/SSTMod.cpp
 src/sampler/PathLengthDirectInfSamplerMod.cpp
@@ -59,5 +59,5 @@ src/informed_new_state_sampler.cpp
 src/state_cost_objective.cpp
 src/kinematic_diff_model.cpp
 )
-target_link_libraries(smf_move_base_planner ${catkin_LIBRARIES} ${Boost_LIBRARIES} ccd ${OCTOMAP_LIBRARIES} ${OMPL_LIBRARIES})
-add_dependencies(smf_move_base_planner ${catkin_EXPORTED_TARGETS} smf_move_base_msgs_generate_messages_cpp ${smf_move_base_msgs_EXPORTED_TARGETS})
+target_link_libraries(kino_smf_move_base_planner ${catkin_LIBRARIES} ${Boost_LIBRARIES} ccd ${OCTOMAP_LIBRARIES} ${OMPL_LIBRARIES})
+add_dependencies(kino_smf_move_base_planner ${catkin_EXPORTED_TARGETS} kino_smf_move_base_msgs_generate_messages_cpp ${kino_smf_move_base_msgs_EXPORTED_TARGETS})

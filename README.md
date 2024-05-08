@@ -4,32 +4,32 @@ This is an online social robot navigation framework for indoor social scenarios 
 
 It is composed of four different packages:
 
-- `smf_move_base_control`: it is a simple differential control method.
-- `smf_move_base_mapping`: is in charge of the perception of the space.
-- `smf_move_base_planning`: responsible for finding solution paths for the navigation query requested.
-- `smf_move_base_msgs`: contains the messages needed for the framework and the start-goal queries.
+- `kino_smf_move_base_control`: it is a simple differential control method.
+- `kino_smf_move_base_mapping`: is in charge of the perception of the space.
+- `kino_smf_move_base_planning`: responsible for finding solution paths for the navigation query requested.
+- `kino_smf_move_base_msgs`: contains the messages needed for the framework and the start-goal queries.
 
 To run the framework, there is a launch file example in every package with example configurations.
 
 ![FrameworkConnections](https://i.imgur.com/JgMGqJW.png)
 
 - [Fedback Social Comfort Robot Navigation Framework](#fedback-social-comfort-robot-navigation-framework)
-  - [World Modeling (`smf_move_base_mapping`)](#world-modeling-smf_move_base_mapping)
+  - [World Modeling (`kino_smf_move_base_mapping`)](#world-modeling-kino_smf_move_base_mapping)
     - [Parameters](#parameters)
     - [Subscribers](#subscribers)
     - [Publishers](#publishers)
     - [Services](#services)
-  - [Online Social Robot Path Planning (`smf_move_base_planning`)](#online-social-robot-path-planning-smf_move_base_planning)
+  - [Online Social Robot Path Planning (`kino_smf_move_base_planning`)](#online-social-robot-path-planning-kino_smf_move_base_planning)
     - [Parameters](#parameters-1)
     - [Subscribers](#subscribers-1)
     - [Publishers](#publishers-1)
     - [Actions](#actions)
-  - [Path Following Control (`smf_move_base_control`)](#path-following-control-smf_move_base_control)
+  - [Path Following Control (`kino_smf_move_base_control`)](#path-following-control-kino_smf_move_base_control)
     - [Parameters](#parameters-2)
     - [Subscribers](#subscribers-2)
     - [Publishers](#publishers-2)
 
-## World Modeling (`smf_move_base_mapping`)
+## World Modeling (`kino_smf_move_base_mapping`)
 
 This package is in charge of the perception for the robot. For that, a depth camera is used, which helps to generate a 3D map of the space by using Octomap.
 
@@ -59,7 +59,7 @@ Alditionally, this package also provides an idea of the crowded areas in the soc
 
 - visualize_free_space (bool, default: True)
 
-  Wether you would like to see the 3D map and grid_map. If `False`, nothing is published at `/smf_move_base_mapping/social_grid_map` and `/smf_move_base_mapping/octomap_map`.
+  Wether you would like to see the 3D map and grid_map. If `False`, nothing is published at `/kino_smf_move_base_mapping/social_grid_map` and `/kino_smf_move_base_mapping/octomap_map`.
 
 - mapping_max_range (double, default: 5.0)
 
@@ -131,21 +131,21 @@ The name of the subscribers' topics are just defined as an example, but they may
 
 The name of the publishers' topics are just defined as an example, but they may be configured using the parameters defined before.
 
-- /smf_move_base_mapping/octomap_map ([visualization_msgs/MarkerArray](http://docs.ros.org/en/noetic/api/visualization_msgs/html/msg/MarkerArray.html))
+- /kino_smf_move_base_mapping/octomap_map ([visualization_msgs/MarkerArray](http://docs.ros.org/en/noetic/api/visualization_msgs/html/msg/MarkerArray.html))
 
   Visual representation of the 3D map created.
 
-- /smf_move_base_mapping/social_grid_map ([grid_map_msgs/GridMap](http://docs.ros.org/en/kinetic/api/grid_map_msgs/html/msg/GridMap.html))
+- /kino_smf_move_base_mapping/social_grid_map ([grid_map_msgs/GridMap](http://docs.ros.org/en/kinetic/api/grid_map_msgs/html/msg/GridMap.html))
 
   Grid map with 4 layers, one for obstacles and one including obstacles and social agents, one for comfort and another for social heatmap.
 
 ### Services
 
-- /smf_move_base_mapping/get_grid_map ([grid_map_msgs/GetGridMap](http://docs.ros.org/en/indigo/api/grid_map_msgs/html/srv/GetGridMap.html))
+- /kino_smf_move_base_mapping/get_grid_map ([grid_map_msgs/GetGridMap](http://docs.ros.org/en/indigo/api/grid_map_msgs/html/srv/GetGridMap.html))
 
   Fetches the grid map from the World Modeling.
 
-## Online Social Robot Path Planning (`smf_move_base_planning`)
+## Online Social Robot Path Planning (`kino_smf_move_base_planning`)
 
 This package is in charge of finding socially acceptable solution paths for the robot to follow.
 
@@ -263,7 +263,7 @@ All of the following parameters have to be defined since they have no default va
 
 The name of the subscribers' topics are just defined as an example, but they may be configured using the parameters defined before.
 
-- /smf_move_base_planner/query_goal ([geometry_msgs/PoseStamped](http://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/PoseStamped.html))
+- /kino_smf_move_base_planner/query_goal ([geometry_msgs/PoseStamped](http://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/PoseStamped.html))
 - /pepper/odom_groundtruth ([nav_msgs/Odometry](http://docs.ros.org/en/noetic/api/nav_msgs/html/msg/Odometry.html))
 
   Robot odometry.
@@ -274,33 +274,33 @@ The name of the subscribers' topics are just defined as an example, but they may
 
 The name of the publishers' topics are just defined as an example, but they may be configured using the parameters defined before.
 
-- /smf_move_base_planner/smf_move_base_solution_path ([smf_move_base_msgs/Path2D](https://github.com/CardiffUniversityComputationalRobotics/smf-nav-stack/blob/world_modeling/smf_move_base_msgs/msg/Path2D.msg))
+- /kino_smf_move_base_planner/kino_smf_move_base_solution_path ([kino_smf_move_base_msgs/Path2D](https://github.com/CardiffUniversityComputationalRobotics/smf-nav-stack/blob/world_modeling/kino_smf_move_base_msgs/msg/Path2D.msg))
 
   Solution path found by the planner. It is passed to the control module.
 
-- /smf_move_base_planner/smf_num_nodes ([std_msgs/Int32](http://docs.ros.org/en/melodic/api/std_msgs/html/msg/Int32.html))
+- /kino_smf_move_base_planner/smf_num_nodes ([std_msgs/Int32](http://docs.ros.org/en/melodic/api/std_msgs/html/msg/Int32.html))
 
   Number of valid nodes sampled by the local planner.
 
-- /smf_move_base_planner/query_goal_pose_rviz ([geometry_msgs/PoseStamped](http://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/PoseStamped.html))
+- /kino_smf_move_base_planner/query_goal_pose_rviz ([geometry_msgs/PoseStamped](http://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/PoseStamped.html))
 
   Shows in RViz the query pose requested to the planner.
 
-- /smf_move_base_planner/query_goal_radius_rviz ([visualization_msgs/Marker](http://docs.ros.org/en/noetic/api/visualization_msgs/html/msg/Marker.html))
+- /kino_smf_move_base_planner/query_goal_radius_rviz ([visualization_msgs/Marker](http://docs.ros.org/en/noetic/api/visualization_msgs/html/msg/Marker.html))
 
   Shows in RViz the radius of the query requested to the planner.
 
-- /smf_move_base_planner/solution_path ([visualization_msgs/Marker](http://docs.ros.org/en/noetic/api/visualization_msgs/html/msg/Marker.html))
+- /kino_smf_move_base_planner/solution_path ([visualization_msgs/Marker](http://docs.ros.org/en/noetic/api/visualization_msgs/html/msg/Marker.html))
 
   Visual solution path to be seen in RViz.
 
 ### Actions
 
-- `/goto_action` ([smf_move_base_msgs/GoTo2D](https://github.com/CardiffUniversityComputationalRobotics/smf-nav-stack/blob/world_modeling/smf_move_base_msgs/action/Goto2D.action))
+- `/goto_action` ([kino_smf_move_base_msgs/GoTo2D](https://github.com/CardiffUniversityComputationalRobotics/smf-nav-stack/blob/world_modeling/kino_smf_move_base_msgs/action/Goto2D.action))
 
   Action to request navigation query. The name of the action server depends on the parameter `goto_action`.
 
-## Path Following Control (`smf_move_base_control`)
+## Path Following Control (`kino_smf_move_base_control`)
 
 This module is in charge of sending the velocities to the robot according to the path obtained so that the robot goes through that path.
 
@@ -340,7 +340,7 @@ This module is in charge of sending the velocities to the robot according to the
 
 The name of the subscribers' topics are just defined as an example, but they may be configured using the parameters defined before.
 
-- /smf_move_base_planner/smf_move_base_solution_path ([smf_move_base_msgs/Path2D](https://github.com/CardiffUniversityComputationalRobotics/smf-nav-stack/blob/world_modeling/smf_move_base_msgs/msg/Path2D.msg))
+- /kino_smf_move_base_planner/kino_smf_move_base_solution_path ([kino_smf_move_base_msgs/Path2D](https://github.com/CardiffUniversityComputationalRobotics/smf-nav-stack/blob/world_modeling/kino_smf_move_base_msgs/msg/Path2D.msg))
 - /pepper/odom_groundtruth ([nav_msgs/Odometry](http://docs.ros.org/en/noetic/api/nav_msgs/html/msg/Odometry.html))
 
 ### Publishers

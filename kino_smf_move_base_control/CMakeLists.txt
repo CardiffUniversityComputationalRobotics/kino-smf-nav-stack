@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(smf_move_base_control)
+project(kino_smf_move_base_control)
 
 add_compile_options(-std=c++11)
 
@@ -11,14 +11,14 @@ find_package(catkin REQUIRED COMPONENTS
   laser_geometry
   tf
   roslib
-  smf_move_base_msgs
+  kino_smf_move_base_msgs
 )
 
 find_package(Boost REQUIRED COMPONENTS system)
 
 catkin_package(
 #  INCLUDE_DIRS include
-  CATKIN_DEPENDS roscpp rospy std_msgs smf_move_base_msgs
+  CATKIN_DEPENDS roscpp rospy std_msgs kino_smf_move_base_msgs
   DEPENDS Eigen
 )
 
@@ -35,7 +35,7 @@ add_executable(guidance_node
   src/guidance.cpp
   src/guidance_node.cpp
 )
-add_dependencies(guidance_node smf_move_base_msgs_generate_messages_cpp ${smf_move_base_msgs_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(guidance_node kino_smf_move_base_msgs_generate_messages_cpp ${kino_smf_move_base_msgs_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(guidance_node
   ${catkin_LIBRARIES}
 )

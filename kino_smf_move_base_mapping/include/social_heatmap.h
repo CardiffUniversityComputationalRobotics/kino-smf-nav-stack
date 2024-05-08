@@ -9,7 +9,7 @@
 #include <pedsim_msgs/AgentStates.h>
 #include <pedsim_msgs/AgentState.h>
 #include <map>
-#include <smf_move_base_msgs/RelevantAgentState.h>
+#include <kino_smf_move_base_msgs/RelevantAgentState.h>
 
 // grid map library
 #include <grid_map_ros/grid_map_ros.hpp>
@@ -29,7 +29,7 @@ private:
 
     unsigned int resolution_factor_ = 5;
 
-    std::map<unsigned int, smf_move_base_msgs::RelevantAgentState> agent_states_record_;
+    std::map<unsigned int, kino_smf_move_base_msgs::RelevantAgentState> agent_states_record_;
 
     grid_map::GridMap social_heatmap_;
 
@@ -60,7 +60,7 @@ public:
 
     // ! EXTERNAL FUNCTIONS
 
-    double socialComfortCost(double x, double y, smf_move_base_msgs::RelevantAgentState relevant_agent_state)
+    double socialComfortCost(double x, double y, kino_smf_move_base_msgs::RelevantAgentState relevant_agent_state)
     {
         double distance = std::sqrt(std::pow(relevant_agent_state.agent_state.pose.position.x - x, 2) +
                                     std::pow(relevant_agent_state.agent_state.pose.position.y - y, 2));

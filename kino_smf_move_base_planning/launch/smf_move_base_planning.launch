@@ -4,8 +4,8 @@
 
     <arg name="output" default="screen" />
 
-    <node name="smf_move_base_planner" pkg="smf_move_base_planning" type="smf_move_base_planner" required="true" output="screen">
-        <rosparam command="load" file="$(find smf_move_base_planning)/config/smf_move_base_planning.yaml" />
+    <node name="kino_smf_move_base_planner" pkg="kino_smf_move_base_planning" type="kino_smf_move_base_planner" required="true" output="screen">
+        <rosparam command="load" file="$(find kino_smf_move_base_planning)/config/kino_smf_move_base_planning.yaml" />
     </node>
 
 </launch>

@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+
+<launch>
+
+    <arg name="output" default="screen" />
+
+    <node name="kino_smf_move_base_mapper" pkg="kino_smf_move_base_mapping" type="kino_smf_move_base_mapper" required="true" output="$(arg output)">
+        <rosparam command="load" file="$(find kino_smf_move_base_mapping)/config/kino_smf_move_base_mapping.yaml" />
+    </node>
+
+</launch>

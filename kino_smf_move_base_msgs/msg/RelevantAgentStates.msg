@@ -1,1 +1,1 @@
-smf_move_base_msgs/RelevantAgentState[] relevant_agent_states
+kino_smf_move_base_msgs/RelevantAgentState[] relevant_agent_states

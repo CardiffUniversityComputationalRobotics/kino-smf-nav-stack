@@ -67,7 +67,7 @@
 
 // smf base controller
 #include <nav_msgs/Path.h>
-#include <smf_move_base_msgs/Goto2DAction.h>
+#include <kino_smf_move_base_msgs/Goto2DAction.h>
 
 // pedsim msgs
 #include <pedsim_msgs/AgentStates.h>
@@ -77,7 +77,7 @@ namespace ob = ompl::base;
 namespace og = ompl::geometric;
 namespace oc = ompl::control;
 
-typedef actionlib::SimpleActionServer<smf_move_base_msgs::Goto2DAction>
+typedef actionlib::SimpleActionServer<kino_smf_move_base_msgs::Goto2DAction>
     SmfBaseGoToActionServer;
 
 //!  OnlinePlannFramework class.
@@ -101,7 +101,7 @@ public:
     //! Callback for getting the 2D navigation goal
     void queryGoalCallback(const geometry_msgs::PoseStampedConstPtr &nav_goal_msg);
     //! Callback for getting the 2D navigation goal
-    void goToActionCallback(const smf_move_base_msgs::Goto2DGoalConstPtr &goto_req);
+    void goToActionCallback(const kino_smf_move_base_msgs::Goto2DGoalConstPtr &goto_req);
     //! Procedure to visualize the resulting path
     void visualizeRRT(og::PathGeometric &geopath);
     //! Procedure to visualize the resulting local path
@@ -125,8 +125,8 @@ private:
     // ROS action server
     SmfBaseGoToActionServer *goto_action_server_;
     std::string goto_action_;
-    smf_move_base_msgs::Goto2DAction goto_action_feedback_;
-    smf_move_base_msgs::Goto2DAction goto_action_result_;
+    kino_smf_move_base_msgs::Goto2DAction goto_action_feedback_;
+    kino_smf_move_base_msgs::Goto2DAction goto_action_result_;
 
     // ROS TF
     tf::Pose last_robot_pose_;
@@ -259,7 +259,7 @@ OnlinePlannFramework::OnlinePlannFramework()
 /*!
  * Callback for getting the 2D navigation goal
  */
-void OnlinePlannFramework::goToActionCallback(const smf_move_base_msgs::Goto2DGoalConstPtr &goto_req)
+void OnlinePlannFramework::goToActionCallback(const kino_smf_move_base_msgs::Goto2DGoalConstPtr &goto_req)
 {
 
     // if (!is_sweep_done_)
@@ -339,10 +339,10 @@ void OnlinePlannFramework::goToActionCallback(const smf_move_base_msgs::Goto2DGo
     std_srvs::Empty::Response resp;
 
     // ! COMMENTED TO AVOID UNNEEDED PROCESSING
-    // while (nh_.ok() && !ros::service::call("/smf_move_base_mapper/clean_merge_octomap", req, resp))  //
+    // while (nh_.ok() && !ros::service::call("/kino_smf_move_base_mapper/clean_merge_octomap", req, resp))  //
     // {
     //     ROS_WARN("Request to %s failed; trying again...",
-    //              nh_.resolveName("/smf_move_base_mapper/clean_merge_octomap").c_str());
+    //              nh_.resolveName("/kino_smf_move_base_mapper/clean_merge_octomap").c_str());
     //     usleep(1000000);
     // }
     solution_path_states_.clear();
@@ -353,7 +353,7 @@ void OnlinePlannFramework::goToActionCallback(const smf_move_base_msgs::Goto2DGo
     while (ros::ok() && (goal_available_ || control_active_))
         loop_rate.sleep();
 
-    smf_move_base_msgs::Goto2DResult result;
+    kino_smf_move_base_msgs::Goto2DResult result;
     result.success = true;
 
     goto_action_server_->setSucceeded(result);
@@ -440,11 +440,11 @@ void OnlinePlannFramework::queryGoalCallback(const geometry_msgs::PoseStampedCon
     std_srvs::Empty::Request req;
     std_srvs::Empty::Response resp;
     // ! COMMENTED TO AVOID UNNEEDED PROCESSING
-    // while (nh_.ok() && !ros::service::call("/smf_move_base_mapper/clean_merge_octomap", req, resp))  //
+    // while (nh_.ok() && !ros::service::call("/kino_smf_move_base_mapper/clean_merge_octomap", req, resp))  //
     // TODO
     // {
     //     ROS_WARN("Request to %s failed; trying again...",
-    //              nh_.resolveName("/smf_move_base_mapper/clean_merge_octomap").c_str());
+    //              nh_.resolveName("/kino_smf_move_base_mapper/clean_merge_octomap").c_str());
     //     usleep(1000000);
     // }
     solution_path_states_.clear();
@@ -1802,7 +1802,7 @@ double OnlinePlannFramework::calculateAngle(double x1, double y1, double x2, dou
 //! Main function
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "smf_move_base_planner");
+    ros::init(argc, argv, "kino_smf_move_base_planner");
 
     ROS_INFO("%s:\n\tonline planner (C++), using OMPL version %s\n", ros::this_node::getName().c_str(),
              OMPL_VERSION);

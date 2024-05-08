@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(smf_move_base_msgs)
+project(kino_smf_move_base_msgs)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -31,14 +31,14 @@ generate_messages(
   DEPENDENCIES
   std_msgs
   pedsim_msgs
-  smf_move_base_msgs
+  kino_smf_move_base_msgs
   geometry_msgs
   actionlib_msgs
 )
 
 catkin_package(
 #  INCLUDE_DIRS include
-#  LIBRARIES smf_move_base_msgs
+#  LIBRARIES kino_smf_move_base_msgs
   CATKIN_DEPENDS roscpp rospy std_msgs actionlib_msgs
 #  DEPENDS system_lib
 )

@@ -18,7 +18,7 @@ namespace otter_coverage
     m_minSpeed = nhP.param("min_speed", 0.0);
 
     ros::Subscriber dubinsPathSub =
-        nh.subscribe("/smf_move_base_planner/path", 1000, &Guidance::newPath, this);
+        nh.subscribe("/kino_smf_move_base_planner/path", 1000, &Guidance::newPath, this);
 
     m_controllerPub =
         nh.advertise<geometry_msgs::Twist>("/stretch_diff_drive_controller/cmd_vel", 1000);
