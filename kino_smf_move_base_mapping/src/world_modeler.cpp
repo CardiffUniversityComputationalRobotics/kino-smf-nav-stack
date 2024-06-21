@@ -13,7 +13,7 @@
  */
 
 // SOCIAL HEATMAP
-#include "social_heatmap.h"
+#include "social_heatmap.hpp"
 
 // Boost
 #include <boost/shared_ptr.hpp>

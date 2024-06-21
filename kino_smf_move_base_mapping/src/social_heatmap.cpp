@@ -1,4 +1,4 @@
-#include <social_heatmap.h>
+#include <social_heatmap.hpp>
 
 //! CONSTRUCTOR
 SocialHeatmap::SocialHeatmap()
