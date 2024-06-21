@@ -60,8 +60,8 @@ set(dependencies
 )
 
 add_executable(kino_smf_move_base_mapper
-src/social_heatmap.cpp
 src/world_modeler.cpp
+src/social_heatmap.cpp
 )
 ament_target_dependencies(kino_smf_move_base_mapper ${dependencies})
 target_link_libraries(kino_smf_move_base_mapper ${OCTOMAP_LIBRARIES})
