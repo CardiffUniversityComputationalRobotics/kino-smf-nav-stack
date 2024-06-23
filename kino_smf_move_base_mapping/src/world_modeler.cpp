@@ -395,10 +395,10 @@ void WorldModeler::laserScanCallback(const sensor_msgs::msg::LaserScan::SharedPt
     laser_scan_projector_.projectLaser(laser_scan, cloud_, laser_scan.range_max);
 
     // Compute origin of sensor in world frame (filters laser_scan_msg->ranges[i] > 0.0)
-    tf2::Vector3 orig(0, 0, 0);
+    geometry_msgs::msg::PoseStamped orig;
     tf2::doTransform(orig, orig, tf_fixed_to_robot);
     tf2::doTransform(orig, orig, tf_robot_to_laser_scan);
-    octomap::point3d origin(orig.x(), orig.y(), orig.z());
+    octomap::point3d origin(orig.pose.position.x, orig.pose.position.y, orig.pose.position.z);
 
     // ! AGENTS FILTERING
 
