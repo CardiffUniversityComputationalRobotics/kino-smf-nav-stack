@@ -320,7 +320,7 @@ OnlinePlannFramework::OnlinePlannFramework()
 /*!
  * Callback for getting the 2D navigation goal
  */
-void OnlinePlannFramework::goToActionCallback(const kino_smf_move_base_msgs::Goto2DGoalConstPtr &goto_req)
+void OnlinePlannFramework::goToActionCallback(const std::shared_ptr<kino_smf_move_base_msgs::action::Goto2D::Goal> goto_req)
 {
 
     // if (!is_sweep_done_)
@@ -343,11 +343,11 @@ void OnlinePlannFramework::goToActionCallback(const kino_smf_move_base_msgs::Got
     double useless_pitch, useless_roll, yaw;
 
     //=======================================================================
-    // Publish RViz Maker
+    // Publish RViz Marker
     //=======================================================================
-    geometry_msgs::PoseStamped query_goal_msg;
+    geometry_msgs::msg::PoseStamped query_goal_msg;
     query_goal_msg.header.frame_id = "map";
-    query_goal_msg.header.stamp = ros::Time::now();
+    query_goal_msg.header.stamp = this->get_clock()->now();
     query_goal_msg.pose.position.x = goto_req->goal.x;
     query_goal_msg.pose.position.y = goto_req->goal.y;
     query_goal_msg.pose.position.z = 0.0;
@@ -355,16 +355,16 @@ void OnlinePlannFramework::goToActionCallback(const kino_smf_move_base_msgs::Got
     query_goal_msg.pose.orientation.y = 0.0;
     query_goal_msg.pose.orientation.z = sin(goto_req->goal.theta / 2.0);
     query_goal_msg.pose.orientation.w = cos(goto_req->goal.theta / 2.0);
-    query_goal_pose_rviz_pub_.publish(query_goal_msg);
+    query_goal_pose_rviz_pub_->publish(query_goal_msg);
 
-    visualization_msgs::Marker radius_msg;
+    visualization_msgs::msg::Marker radius_msg;
     radius_msg.header.frame_id = "map";
-    radius_msg.header.stamp = ros::Time::now();
+    radius_msg.header.stamp = this->get_clock()->now();
     radius_msg.ns = "goal_radius";
-    radius_msg.action = visualization_msgs::Marker::ADD;
+    radius_msg.action = visualization_msgs::msg::Marker::ADD;
     radius_msg.pose.orientation.w = 1.0;
     radius_msg.id = 0;
-    radius_msg.type = visualization_msgs::Marker::CYLINDER;
+    radius_msg.type = visualization_msgs::msg::Marker::CYLINDER;
     radius_msg.scale.x = 2.0 * xy_goal_tolerance_;
     radius_msg.scale.y = 2.0 * xy_goal_tolerance_;
     radius_msg.scale.z = 0.02;
@@ -373,22 +373,36 @@ void OnlinePlannFramework::goToActionCallback(const kino_smf_move_base_msgs::Got
     radius_msg.pose.position.x = goto_req->goal.x;
     radius_msg.pose.position.y = goto_req->goal.y;
     radius_msg.pose.position.z = 0.0;
-    query_goal_radius_rviz_pub_.publish(radius_msg);
+    query_goal_radius_rviz_pub_->publish(radius_msg);
 
     //=======================================================================
     // Transform from map to odom
     //=======================================================================
-    ros::Time t;
-    std::string err = "";
-    tf::StampedTransform tf_map_to_fixed;
-    tf_listener_.getLatestCommonTime("map", "odom", t, &err);
-    tf_listener_.lookupTransform("map", "odom", t, tf_map_to_fixed);
-    tf_map_to_fixed.getBasis().getEulerYPR(yaw, useless_pitch, useless_roll);
+    geometry_msgs::msg::TransformStamped map_to_fixed;
+    try
+    {
+        map_to_fixed = tf_buffer_->lookupTransform("map", "odom", tf2::TimePointZero);
+        tf2::Quaternion q(map_to_fixed.transform.rotation.x, map_to_fixed.transform.rotation.y,
+                          map_to_fixed.transform.rotation.z, map_to_fixed.transform.rotation.w);
+        tf2::Matrix3x3(q).getEulerYPR(yaw, useless_pitch, useless_roll);
+    }
+    catch (tf2::TransformException &ex)
+    {
+        RCLCPP_WARN(this->get_logger(), "Could not transform map to odom: %s", ex.what());
+        return;
+    }
 
-    tf::Point goal_point_odom_frame(goal_map_frame_[0], goal_map_frame_[1], 0.0);
+    tf2::Transform tf_map_to_fixed(tf2::Quaternion(map_to_fixed.transform.rotation.x,
+                                                   map_to_fixed.transform.rotation.y,
+                                                   map_to_fixed.transform.rotation.z,
+                                                   map_to_fixed.transform.rotation.w),
+                                   tf2::Vector3(map_to_fixed.transform.translation.x,
+                                                map_to_fixed.transform.translation.y,
+                                                map_to_fixed.transform.translation.z));
+    tf2::Vector3 goal_point_odom_frame(goal_map_frame_[0], goal_map_frame_[1], 0.0);
     goal_point_odom_frame = tf_map_to_fixed.inverse() * goal_point_odom_frame;
-    goal_odom_frame_[0] = goal_point_odom_frame.getX();
-    goal_odom_frame_[1] = goal_point_odom_frame.getY();
+    goal_odom_frame_[0] = goal_point_odom_frame.x();
+    goal_odom_frame_[1] = goal_point_odom_frame.y();
     goal_odom_frame_[2] = goal_map_frame_[2] - yaw;
 
     goal_radius_ = xy_goal_tolerance_;
@@ -396,9 +410,6 @@ void OnlinePlannFramework::goToActionCallback(const kino_smf_move_base_msgs::Got
     //=======================================================================
     // Clean and merge octomap
     //=======================================================================
-    std_srvs::Empty::Request req;
-    std_srvs::Empty::Response resp;
-
     // ! COMMENTED TO AVOID UNNEEDED PROCESSING
     // while (nh_.ok() && !ros::service::call("/kino_smf_move_base_mapper/clean_merge_octomap", req, resp))  //
     // {
@@ -410,17 +421,17 @@ void OnlinePlannFramework::goToActionCallback(const kino_smf_move_base_msgs::Got
     local_solution_path_states_.clear();
     goal_available_ = true;
 
-    ros::Rate loop_rate(10);
-    while (ros::ok() && (goal_available_ || control_active_))
+    rclcpp::Rate loop_rate(10);
+    while (rclcpp::ok() && (goal_available_ || control_active_))
         loop_rate.sleep();
 
-    kino_smf_move_base_msgs::Goto2DResult result;
-    result.success = true;
+    auto result = std::make_shared<kino_smf_move_base_msgs::action::Goto2D::Result>();
+    result->success = true;
 
-    goto_action_server_->setSucceeded(result);
-    std_msgs::Bool goal_reached;
+    // goto_action_server_->succeeded(result);
+    std_msgs::msg::Bool goal_reached;
     goal_reached.data = true;
-    goal_reached_pub_.publish(goal_reached);
+    goal_reached_pub_->publish(goal_reached);
     // is_sweep_done_ = false;
 }
 
@@ -428,32 +439,37 @@ void OnlinePlannFramework::goToActionCallback(const kino_smf_move_base_msgs::Got
 /*!
  * Callback for getting updated vehicle odometry
  */
-void OnlinePlannFramework::odomCallback(const nav_msgs::OdometryConstPtr &odom_msg)
+void OnlinePlannFramework::odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom_msg)
 {
     if (!odom_available_)
         odom_available_ = true;
 
-    geometry_msgs::Pose predictedPose = odom_msg->pose.pose;
+    geometry_msgs::msg::Pose predictedPose = odom_msg->pose.pose;
 
     predictedPose.position.x = odom_msg->pose.pose.position.x;
 
     predictedPose.position.y = odom_msg->pose.pose.position.y;
 
-    tf::poseMsgToTF(predictedPose, last_robot_pose_);
+    tf2::fromMsg(predictedPose, last_robot_pose_);
 
     double useless_pitch,
         useless_roll, yaw;
-    last_robot_pose_.getBasis().getEulerYPR(yaw, useless_pitch, useless_roll);
+    tf2::Matrix3x3(last_robot_pose_.getRotation()).getEulerYPR(yaw, useless_pitch, useless_roll);
 
     if ((goal_available_) &&
         sqrt(pow(goal_odom_frame_[0] - last_robot_pose_.getOrigin().getX(), 2.0) +
-             pow(goal_odom_frame_[1] - last_robot_pose_.getOrigin().getY(), 2.0)) < (goal_radius_ + 0.5) &&
+             pow(goal_odom_frame_[1] - last_robot_pose_.getOrigin().getY(), 2.0)) < (goal_radius_ + 0.2) &&
         abs(yaw - goal_odom_frame_[2]) < (yaw_goal_tolerance_ + 0.2))
     {
         goal_available_ = false;
+        std_msgs::msg::Bool goal_reached;
+        goal_reached.data = true;
+        goal_reached_pub_->publish(goal_reached);
+        RCLCPP_WARN(this->get_logger(), "Goal reached");
     }
 
-    current_robot_velocity = odom_msg->twist.twist;
+    current_robot_velocity_ = odom_msg->twist.twist;
+    odom_data_ = odom_msg;
 }
 
 //! Control active callback.
