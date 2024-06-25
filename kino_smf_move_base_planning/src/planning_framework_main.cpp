@@ -64,7 +64,7 @@
 
 // smf base controller
 #include <nav_msgs/msg/path.hpp>
-// #include <kino_smf_move_base_msgs/Goto2DAction.h>
+#include <kino_smf_move_base_msgs/action/goto2_d.hpp>
 
 // pedsim msgs
 #include <pedsim_msgs/msg/agent_states.hpp>
@@ -93,17 +93,17 @@ public:
     //! Periodic callback to solve the query.
     void planningTimerCallback();
     //! Callback for getting current vehicle odometry
-    void odomCallback(const nav_msgs::OdometryConstPtr &odom_msg);
+    void odomCallback(const nav_msgs::msg::Odometry::SharedPtr &odom_msg);
     //! Callback for getting the 2D navigation goal
-    void queryGoalCallback(const geometry_msgs::PoseStampedConstPtr &nav_goal_msg);
+    void queryGoalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr &nav_goal_msg);
     //! Callback for getting the 2D navigation goal
-    void goToActionCallback(const kino_smf_move_base_msgs::Goto2DGoalConstPtr &goto_req);
+    void goToActionCallback(const std::shared_ptr<kino_smf_move_base_msgs::action::Goto2D::Goal> goto_req);
     //! Procedure to visualize the resulting path
     void visualizeRRT(og::PathGeometric &geopath);
     //! Procedure to visualize the resulting local path
     void visualizeRRTLocal(og::PathGeometric &geopath);
     //! Callback for getting the state of the Smf base controller.
-    void controlActiveCallback(const std_msgs::BoolConstPtr &control_active_msg);
+    void controlActiveCallback(const std_msgs::msg::Bool::SharedPtr control_active_msg);
     //! check if goal candidate is valid
     bool validateGoalCandidate(const ob::ScopedState<> &goal_candidate);
     //! calculate angle between to points XY

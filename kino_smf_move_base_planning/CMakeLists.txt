@@ -53,10 +53,10 @@ set(dependencies
 )
 
 add_executable(kino_smf_move_base_planner
+src/planning_framework_main.cpp
 src/planner/RRTstarMod.cpp
 src/planner/SSTMod.cpp
 src/sampler/PathLengthDirectInfSamplerMod.cpp
-# src/planning_framework_main.cpp
 src/state_validity_checker_grid_map_R2.cpp
 src/local_state_validity_checker_grid_map_SE2.cpp
 src/new_state_sampler.cpp
