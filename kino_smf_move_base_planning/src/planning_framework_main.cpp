@@ -147,7 +147,7 @@ private:
     og::SimpleSetupPtr simple_setup_global_;
     oc::SimpleSetupPtr simple_setup_local_;
 
-    double timer_period_, solving_time_, xy_goal_tolerance_, local_xy_goal_tolerance_, yaw_goal_tolerance_, robot_base_radius;
+    double timer_period_, solving_time_, xy_goal_tolerance_, local_xy_goal_tolerance_, yaw_goal_tolerance_, robot_base_radius_;
 
     bool opport_collision_check_, reuse_last_best_solution_, local_reuse_last_best_solution_, motion_cost_interpolation_, odom_available_, goal_available_, dynamic_bounds_, visualize_tree_, control_active_, local_use_social_heatmap_, is_sweep_done_;
     std::vector<double> planning_bounds_x_, planning_bounds_y_, start_state_, goal_map_frame_,
@@ -213,8 +213,8 @@ OnlinePlannFramework::OnlinePlannFramework()
     this->declare_parameter("local_optimization_objective", rclcpp::ParameterValue(std::string("PathLength")));
     this->declare_parameter("local_path_range", rclcpp::ParameterValue(0.0));
     this->declare_parameter("global_time_percent", rclcpp::ParameterValue(0.0));
-    this->declare_parameter("max_trans_vel", rclpp::ParameterValue(0.3));
-    this->declare_parameter("max_rot_vel", rclpp::ParameterValue(0.8));
+    this->declare_parameter("max_trans_vel", rclcpp::ParameterValue(0.3));
+    this->declare_parameter("max_rot_vel", rclcpp::ParameterValue(0.8));
     this->declare_parameter("grid_map_service", rclcpp::ParameterValue(std::string("grid_map_service")));
     this->declare_parameter("local_use_social_heatmap", rclcpp::ParameterValue(true));
 
@@ -259,55 +259,61 @@ OnlinePlannFramework::OnlinePlannFramework()
     is_sweep_done_ = false;
 
     //=======================================================================
-    // Subscribers
+    // ! Subscribers
     //=======================================================================
     // Odometry data
-    odom_sub_ = nh_.subscribe(odometry_topic_, 1, &OnlinePlannFramework::odomCallback, this);
+    odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(odometry_topic_, 1, std::bind(&OnlinePlannFramework::odomCallback, this, std::placeholders::_1));
     odom_available_ = false;
 
     // 2D Nav Goal
-    nav_goal_sub_ = local_nh_.subscribe(query_goal_topic_, 1, &OnlinePlannFramework::queryGoalCallback, this);
+    nav_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(query_goal_topic_, 1, std::bind(&OnlinePlannFramework::queryGoalCallback, this, std::placeholders::_1));
 
     // Controller active flag
-    control_active_sub_ =
-        local_nh_.subscribe(control_active_topic_, 1, &OnlinePlannFramework::controlActiveCallback, this);
+    // control_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(control_active_topic_, 1, std::bind(&OnlinePlannFramework::controlActiveCallback, this, std::placeholders::_1));
 
     //=======================================================================
-    // Publishers
+    // ! Publishers
     //=======================================================================
-    solution_path_rviz_pub_ = local_nh_.advertise<visualization_msgs::Marker>("solution_path", 1, true);
-    solution_local_path_rviz_pub_ = local_nh_.advertise<visualization_msgs::Marker>("local_solution_path", 1, true);
-    solution_path_control_pub_ =
-        local_nh_.advertise<nav_msgs::Path>("path", 1, true);
-    query_goal_pose_rviz_pub_ =
-        local_nh_.advertise<geometry_msgs::PoseStamped>("query_goal_pose_rviz", 1, true);
-    query_goal_radius_rviz_pub_ =
-        local_nh_.advertise<visualization_msgs::Marker>("query_goal_radius_rviz", 1, true);
+    solution_path_rviz_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("solution_path", 1);
+    solution_local_path_rviz_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("local_solution_path", 1);
+    solution_path_control_pub_ = this->create_publisher<nav_msgs::msg::Path>(solution_path_topic_, 1);
+    query_goal_pose_rviz_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("query_goal_pose_rviz", 1);
+    query_goal_radius_rviz_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("query_goal_radius_rviz", 1);
+    num_nodes_pub_ = this->create_publisher<std_msgs::msg::Int32>("smf_num_nodes", 1);
+    goal_reached_pub_ = this->create_publisher<std_msgs::msg::Bool>("goal_reached", 1);
+    sweep_motion_pub_ = this->create_publisher<std_msgs::msg::Bool>("sweep_motion", 1);
 
-    num_nodes_pub_ = local_nh_.advertise<std_msgs::Int32>("smf_num_nodes", 1, true);
-    goal_reached_pub_ = local_nh_.advertise<std_msgs::Bool>("goal_reached", 1, true);
-    sweep_motion_pub_ = local_nh_.advertise<std_msgs::Bool>("sweep_motion", 1, true);
+    // ! SERVICE CLIENT WAIT
+    grid_map_client_ = this->create_client<GetGridMap>(grid_map_service_);
+
+    while (!grid_map_client_->wait_for_service(1s))
+    {
+        if (!rclcpp::ok())
+        {
+            RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Interrupted while waiting for the service. Exiting.");
+        }
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "service not available, waiting again...");
+    }
 
     //=======================================================================
     // Action server
     //=======================================================================
-    goto_action_server_ = new SmfBaseGoToActionServer(
-        ros::NodeHandle(), goto_action_, boost::bind(&OnlinePlannFramework::goToActionCallback, this, _1),
-        false);
+    // goto_action_server_ = new SmfBaseGoToActionServer(
+    //     this, goto_action_, std::bind(&OnlinePlannFramework::goToActionCallback, this, std::placeholders::_1), false);
 
     //=======================================================================
-    // Waiting for odometry
+    // ! Waiting for odometry
     //=======================================================================
-    ros::Rate loop_rate(10);
-    while (ros::ok() && !odom_available_)
+    rclcpp::Rate loop_rate(10);
+    while (rclcpp::ok() && !odom_available_)
     {
-        ros::spinOnce();
+        rclcpp::spin_some(this->get_node_base_interface());
         loop_rate.sleep();
-        ROS_WARN("%s:\n\tWaiting for vehicle's odometry\n", ros::this_node::getName().c_str());
+        RCLCPP_WARN(this->get_logger(), "Waiting for vehicle's odometry");
     }
-    ROS_WARN("%s:\n\tOdometry received\n", ros::this_node::getName().c_str());
+    RCLCPP_WARN(this->get_logger(), "Odometry received");
 
-    goto_action_server_->start();
+    // goto_action_server_->start();
 }
 
 //! Goto action callback.
@@ -1495,11 +1501,11 @@ void OnlinePlannFramework::planningTimerCallback()
                                 posEv[0] = double(local_solution_path_states_copy_[i]
                                                       ->as<ob::SE2StateSpace::StateType>()
                                                       ->getX() +
-                                                  counter * robot_base_radius * std::cos(angle)); // x
+                                                  counter * robot_base_radius_ * std::cos(angle)); // x
                                 posEv[1] = double(local_solution_path_states_copy_[i]
                                                       ->as<ob::SE2StateSpace::StateType>()
                                                       ->getY() +
-                                                  counter * robot_base_radius * std::sin(angle)); // y
+                                                  counter * robot_base_radius_ * std::sin(angle)); // y
 
                                 if (!simple_setup_local_->getSpaceInformation()->checkMotion(
                                         local_solution_path_states_copy_[i], posEv->as<ob::State>()))
@@ -1511,11 +1517,11 @@ void OnlinePlannFramework::planningTimerCallback()
                                     posEv[0] = double(local_solution_path_states_copy_[i]
                                                           ->as<ob::SE2StateSpace::StateType>()
                                                           ->getX() +
-                                                      (counter - 1) * robot_base_radius * std::cos(angle)); // x
+                                                      (counter - 1) * robot_base_radius_ * std::cos(angle)); // x
                                     posEv[1] = double(local_solution_path_states_copy_[i]
                                                           ->as<ob::SE2StateSpace::StateType>()
                                                           ->getY() +
-                                                      (counter - 1) * robot_base_radius * std::sin(angle));
+                                                      (counter - 1) * robot_base_radius_ * std::sin(angle));
 
                                     geometry_msgs::PoseStamped p;
                                     p.pose.position.x = posEv[0];
