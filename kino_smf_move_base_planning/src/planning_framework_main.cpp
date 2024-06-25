@@ -476,7 +476,7 @@ void OnlinePlannFramework::odomCallback(const nav_msgs::msg::Odometry::SharedPtr
 /*!
  * Callback for getting the state of the Smf base controller
  */
-void OnlinePlannFramework::controlActiveCallback(const std_msgs::BoolConstPtr &control_active_msg)
+void OnlinePlannFramework::controlActiveCallback(const std_msgs::msg::Bool::SharedPtr control_active_msg)
 {
     control_active_ = control_active_msg->data;
 }
@@ -485,11 +485,13 @@ void OnlinePlannFramework::controlActiveCallback(const std_msgs::BoolConstPtr &c
 /*!
  * Callback for getting the 2D navigation goal
  */
-void OnlinePlannFramework::queryGoalCallback(const geometry_msgs::PoseStampedConstPtr &query_goal_msg)
+void OnlinePlannFramework::queryGoalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr query_goal_msg)
 {
     double useless_pitch, useless_roll, yaw;
-    yaw = tf::getYaw(tf::Quaternion(query_goal_msg->pose.orientation.x, query_goal_msg->pose.orientation.y,
-                                    query_goal_msg->pose.orientation.z, query_goal_msg->pose.orientation.w));
+    tf2::Quaternion q(query_goal_msg->pose.orientation.x, query_goal_msg->pose.orientation.y,
+                      query_goal_msg->pose.orientation.z, query_goal_msg->pose.orientation.w);
+    tf2::Matrix3x3 m(q);
+    m.getRPY(useless_roll, useless_pitch, yaw);
 
     goal_map_frame_[0] = query_goal_msg->pose.position.x; // x
     goal_map_frame_[1] = query_goal_msg->pose.position.y; // y
@@ -498,24 +500,30 @@ void OnlinePlannFramework::queryGoalCallback(const geometry_msgs::PoseStampedCon
     //=======================================================================
     // Transform from map to odom
     //=======================================================================
-    ros::Time t;
-    std::string err = "";
-    tf::StampedTransform tf_map_to_fixed;
-    tf_listener_.getLatestCommonTime("map", "odom", t, &err);
-    tf_listener_.lookupTransform("map", "odom", t, tf_map_to_fixed);
-    tf_map_to_fixed.getBasis().getEulerYPR(yaw, useless_pitch, useless_roll);
+    geometry_msgs::msg::TransformStamped tf_map_to_fixed;
+    try
+    {
+        tf_map_to_fixed = tf_buffer_->lookupTransform("map", "odom", tf2::TimePointZero);
+    }
+    catch (tf2::TransformException &ex)
+    {
+        RCLCPP_WARN(this->get_logger(), "Could not transform map to odom: %s", ex.what());
+        return;
+    }
 
-    tf::Point goal_point_odom_frame(goal_map_frame_[0], goal_map_frame_[1], 0.0);
-    goal_point_odom_frame = tf_map_to_fixed.inverse() * goal_point_odom_frame;
-    goal_odom_frame_[0] = goal_point_odom_frame.getX();
-    goal_odom_frame_[1] = goal_point_odom_frame.getY();
+    tf2::Transform tf2_map_to_fixed;
+    tf2::fromMsg(tf_map_to_fixed.transform, tf2_map_to_fixed);
+    tf2::Matrix3x3(tf2_map_to_fixed.getRotation()).getRPY(useless_roll, useless_pitch, yaw);
+
+    tf2::Vector3 goal_point_odom_frame(goal_map_frame_[0], goal_map_frame_[1], 0.0);
+    goal_point_odom_frame = tf2_map_to_fixed.inverse() * goal_point_odom_frame;
+    goal_odom_frame_[0] = goal_point_odom_frame.x();
+    goal_odom_frame_[1] = goal_point_odom_frame.y();
     goal_odom_frame_[2] = goal_map_frame_[2] - yaw;
 
     //=======================================================================
     // Clean and merge octomap
     //=======================================================================
-    std_srvs::Empty::Request req;
-    std_srvs::Empty::Response resp;
     // ! COMMENTED TO AVOID UNNEEDED PROCESSING
     // while (nh_.ok() && !ros::service::call("/kino_smf_move_base_mapper/clean_merge_octomap", req, resp))  //
     // TODO
@@ -531,16 +539,16 @@ void OnlinePlannFramework::queryGoalCallback(const geometry_msgs::PoseStampedCon
     //=======================================================================
     // Publish RViz Maker
     //=======================================================================
-    query_goal_pose_rviz_pub_.publish(query_goal_msg);
+    query_goal_pose_rviz_pub_->publish(*query_goal_msg);
 
-    visualization_msgs::Marker radius_msg;
+    visualization_msgs::msg::Marker radius_msg;
     radius_msg.header.frame_id = "map";
-    radius_msg.header.stamp = ros::Time::now();
+    radius_msg.header.stamp = this->now();
     radius_msg.ns = "goal_radius";
-    radius_msg.action = visualization_msgs::Marker::ADD;
+    radius_msg.action = visualization_msgs::msg::Marker::ADD;
     radius_msg.pose.orientation.w = 1.0;
     radius_msg.id = 0;
-    radius_msg.type = visualization_msgs::Marker::CYLINDER;
+    radius_msg.type = visualization_msgs::msg::Marker::CYLINDER;
     radius_msg.scale.x = 2.0 * xy_goal_tolerance_;
     radius_msg.scale.y = 2.0 * xy_goal_tolerance_;
     radius_msg.scale.z = 0.02;
@@ -549,7 +557,7 @@ void OnlinePlannFramework::queryGoalCallback(const geometry_msgs::PoseStampedCon
     radius_msg.pose.position.x = goal_map_frame_[0];
     radius_msg.pose.position.y = goal_map_frame_[1];
     radius_msg.pose.position.z = 0.0;
-    query_goal_radius_rviz_pub_.publish(radius_msg);
+    query_goal_radius_rviz_pub_->publish(radius_msg);
 }
 
 //!  Planner setup.
