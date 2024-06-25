@@ -37,24 +37,21 @@
 
 #include <planner/RRTstarMod.h>
 #include <planner/SSTMod.h>
-// ROS
-#include <ros/ros.h>
-#include <ros/package.h>
-// ROS services
-#include <std_srvs/Empty.h>
-// ROS markers rviz
-#include <visualization_msgs/Marker.h>
-#include <nav_msgs/Odometry.h>
-#include <std_msgs/Bool.h>
-#include <std_msgs/Int32.h>
-#include <geometry_msgs/PoseArray.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <geometry_msgs/Pose2D.h>
-// ROS tf
-#include <tf/message_filter.h>
-#include <tf/transform_listener.h>
-// action server
-#include <actionlib/server/simple_action_server.h>
+
+// ROS2
+#include <rclcpp/rclcpp.hpp>
+#include <visualization_msgs/msg/marker.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/int32.hpp>
+#include <geometry_msgs/msg/pose_array.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/pose2_d.hpp>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/message_filter.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+// #include <actionlib/server/simple_action_server.h>
 
 // Planner
 #include <new_state_sampler.h>
@@ -66,19 +63,18 @@
 #include "kinematic_diff_model.h"
 
 // smf base controller
-#include <nav_msgs/Path.h>
-#include <kino_smf_move_base_msgs/Goto2DAction.h>
+#include <nav_msgs/msg/path.hpp>
+// #include <kino_smf_move_base_msgs/Goto2DAction.h>
 
 // pedsim msgs
-#include <pedsim_msgs/AgentStates.h>
-#include <pedsim_msgs/AgentState.h>
+#include <pedsim_msgs/msg/agent_states.hpp>
+#include <pedsim_msgs/msg/agent_state.hpp>
 
 namespace ob = ompl::base;
 namespace og = ompl::geometric;
 namespace oc = ompl::control;
 
-typedef actionlib::SimpleActionServer<kino_smf_move_base_msgs::Goto2DAction>
-    SmfBaseGoToActionServer;
+// typedef actionlib::SimpleActionServer<smf_move_base_msgs::action::Goto2D> SmfBaseGoToActionServer;
 
 //!  OnlinePlannFramework class.
 /*!
@@ -87,7 +83,7 @@ typedef actionlib::SimpleActionServer<kino_smf_move_base_msgs::Goto2DAction>
  * C-Space: R2
  * Workspace is represented with Octomaps
  */
-class OnlinePlannFramework
+class OnlinePlannFramework : public rclcpp::Node
 {
 public:
     //! Constructor
