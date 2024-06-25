@@ -112,27 +112,44 @@ public:
     ob::GoalStates *findNewGoalCandidate(const ob::ScopedState<> &goal_candidate);
 
 private:
-    // ROS
-    ros::NodeHandle nh_, local_nh_;
-    ros::Timer timer_;
-    ros::Subscriber odom_sub_, nav_goal_sub_, control_active_sub_;
-    ros::Publisher solution_path_rviz_pub_, solution_local_path_rviz_pub_, solution_path_control_pub_, query_goal_pose_rviz_pub_, query_goal_radius_rviz_pub_, num_nodes_pub_, goal_reached_pub_, sweep_motion_pub_;
+    // ! SUBSCRIBERS
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_sub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr control_active_sub_;
 
-    // ROS action server
-    SmfBaseGoToActionServer *goto_action_server_;
+    // ! PUBLISHERS
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr solution_path_rviz_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr solution_local_path_rviz_pub_;
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr solution_path_control_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr query_goal_pose_rviz_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr query_goal_radius_rviz_pub_;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr num_nodes_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr sweep_motion_pub_;
+
+    // ! action server
+    // KinoSmfBaseGoToActionServer *goto_action_server_;
+    // TODO: IMPLEMENTATION OF ACTION
     std::string goto_action_;
-    kino_smf_move_base_msgs::Goto2DAction goto_action_feedback_;
-    kino_smf_move_base_msgs::Goto2DAction goto_action_result_;
+    kino_smf_move_base_msgs::action::Goto2D::Feedback goto_action_feedback_;
+    kino_smf_move_base_msgs::action::Goto2D::Result goto_action_result_;
 
-    // ROS TF
-    tf::Pose last_robot_pose_;
-    tf::TransformListener tf_listener_;
+    // GRIDMAP SERVICE
+    rclcpp::Client<GetGridMap>::SharedPtr grid_map_client_;
+    std::string grid_map_service_;
+
+    // ROS2 TF
+    std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    tf2::Transform last_robot_pose_;
 
     // OMPL, online planner
     og::SimpleSetupPtr simple_setup_global_;
     oc::SimpleSetupPtr simple_setup_local_;
+
     double timer_period_, solving_time_, xy_goal_tolerance_, local_xy_goal_tolerance_, yaw_goal_tolerance_, robot_base_radius;
-    bool opport_collision_check_, reuse_last_best_solution_, local_reuse_last_best_solution_, motion_cost_interpolation_, odom_available_, goal_available_, dynamic_bounds_, visualize_tree_, control_active_, is_sweep_done_;
+
+    bool opport_collision_check_, reuse_last_best_solution_, local_reuse_last_best_solution_, motion_cost_interpolation_, odom_available_, goal_available_, dynamic_bounds_, visualize_tree_, control_active_, local_use_social_heatmap_, is_sweep_done_;
     std::vector<double> planning_bounds_x_, planning_bounds_y_, start_state_, goal_map_frame_,
         goal_odom_frame_;
     double goal_radius_, local_goal_radius_, local_path_range_, global_time_percent_, max_trans_vel_, max_rot_vel_;
@@ -140,9 +157,8 @@ private:
         solution_path_topic_, world_frame_, octomap_service_, control_active_topic_;
     std::vector<const ob::State *> solution_path_states_, local_solution_path_states_, past_local_solution_path_states_;
 
-    // ====================
-
-    geometry_msgs::Twist current_robot_velocity;
+    nav_msgs::msg::Odometry::SharedPtr odom_data_;
+    geometry_msgs::msg::Twist current_robot_velocity_;
 };
 
 //!  Constructor.
@@ -151,8 +167,15 @@ private:
  * Publishers to visualize the resulting path.
  */
 OnlinePlannFramework::OnlinePlannFramework()
-    : local_nh_("~"), dynamic_bounds_(false), goto_action_server_(NULL), control_active_(false)
+    : Node("online_planning_framework"), dynamic_bounds_(false), control_active_(false)
 {
+
+    //=======================================================================
+    // TF LISTENER
+    //=======================================================================
+    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
     //=======================================================================
     // Get parameters
     //=======================================================================
@@ -162,35 +185,71 @@ OnlinePlannFramework::OnlinePlannFramework()
     goal_map_frame_.resize(3);
     goal_odom_frame_.resize(3);
 
-    local_nh_.param("world_frame", world_frame_, world_frame_);
-    local_nh_.param("planning_bounds_x", planning_bounds_x_, planning_bounds_x_);
-    local_nh_.param("planning_bounds_y", planning_bounds_y_, planning_bounds_y_);
-    local_nh_.param("start_state", start_state_, start_state_);
-    local_nh_.param("goal_state", goal_map_frame_, goal_map_frame_);
-    local_nh_.param("timer_period", timer_period_, timer_period_);
-    local_nh_.param("solving_time", solving_time_, solving_time_);
-    local_nh_.param("opport_collision_check", opport_collision_check_, opport_collision_check_);
-    local_nh_.param("planner_name", planner_name_, planner_name_);
-    local_nh_.param("reuse_last_best_solution", reuse_last_best_solution_, reuse_last_best_solution_);
-    local_nh_.param("local_reuse_last_best_solution", local_reuse_last_best_solution_, local_reuse_last_best_solution_);
-    local_nh_.param("optimization_objective", optimization_objective_, optimization_objective_);
-    local_nh_.param("motion_cost_interpolation", motion_cost_interpolation_, motion_cost_interpolation_);
-    local_nh_.param("odometry_topic", odometry_topic_, odometry_topic_);
-    local_nh_.param("query_goal_topic", query_goal_topic_, query_goal_topic_);
-    local_nh_.param("goto_action", goto_action_, goto_action_);
-    local_nh_.param("solution_path_topic", solution_path_topic_, solution_path_topic_);
-    local_nh_.param("dynamic_bounds", dynamic_bounds_, dynamic_bounds_);
-    local_nh_.param("xy_goal_tolerance", xy_goal_tolerance_, 0.2);
-    local_nh_.param("yaw_goal_tolerance", yaw_goal_tolerance_, 0.1);
-    local_nh_.param("visualize_tree", visualize_tree_, false);
-    local_nh_.param("robot_base_radius", robot_base_radius, robot_base_radius);
-    local_nh_.param("local_planner_name", local_planner_name_, local_planner_name_);
-    local_nh_.param("local_xy_goal_tolerance", local_xy_goal_tolerance_, local_xy_goal_tolerance_);
-    local_nh_.param("local_optimization_objective", local_optimization_objective_, local_optimization_objective_);
-    local_nh_.param("local_path_range", local_path_range_, local_path_range_);
-    local_nh_.param("global_time_percent", global_time_percent_, global_time_percent_);
-    local_nh_.param("max_trans_vel", max_trans_vel_, max_trans_vel_);
-    local_nh_.param("max_rot_vel", max_rot_vel_, max_rot_vel_);
+    // ! DECLARE PARAMETERS
+    this->declare_parameter("world_frame", rclcpp::ParameterValue(std::string("map")));
+    this->declare_parameter("planning_bounds_x", rclcpp::ParameterValue(std::vector<double>{50.0, 50.0}));
+    this->declare_parameter("planning_bounds_y", rclcpp::ParameterValue(std::vector<double>{50.0, 50.0}));
+    this->declare_parameter("start_state", rclcpp::ParameterValue(std::vector<double>{0.0, 0.0}));
+    this->declare_parameter("goal_state", rclcpp::ParameterValue(std::vector<double>{0.0, 0.0, 0.0}));
+    this->declare_parameter("timer_period", rclcpp::ParameterValue(1.0));
+    this->declare_parameter("solving_time", rclcpp::ParameterValue(1.0));
+    this->declare_parameter("opport_collision_check", rclcpp::ParameterValue(false));
+    this->declare_parameter("planner_name", rclcpp::ParameterValue(std::string("RRT")));
+    this->declare_parameter("reuse_last_best_solution", rclcpp::ParameterValue(false));
+    this->declare_parameter("local_reuse_last_best_solution", rclcpp::ParameterValue(false));
+    this->declare_parameter("optimization_objective", rclcpp::ParameterValue(std::string("PathLength")));
+    this->declare_parameter("motion_cost_interpolation", rclcpp::ParameterValue(false));
+    this->declare_parameter("odometry_topic", rclcpp::ParameterValue(std::string("odom")));
+    this->declare_parameter("query_goal_topic", rclcpp::ParameterValue(std::string("query_goal")));
+    this->declare_parameter("goto_action", rclcpp::ParameterValue(std::string("go_action")));
+    this->declare_parameter("solution_path_topic", rclcpp::ParameterValue(std::string("solution_path")));
+    this->declare_parameter("dynamic_bounds", rclcpp::ParameterValue(false));
+    this->declare_parameter("xy_goal_tolerance", rclcpp::ParameterValue(0.2));
+    this->declare_parameter("yaw_goal_tolerance", rclcpp::ParameterValue(0.1));
+    this->declare_parameter("visualize_tree", rclcpp::ParameterValue(false));
+    this->declare_parameter("robot_base_radius", rclcpp::ParameterValue(0.0));
+    this->declare_parameter("local_planner_name", rclcpp::ParameterValue(std::string("RRTstar")));
+    this->declare_parameter("local_xy_goal_tolerance", rclcpp::ParameterValue(0.2));
+    this->declare_parameter("local_optimization_objective", rclcpp::ParameterValue(std::string("PathLength")));
+    this->declare_parameter("local_path_range", rclcpp::ParameterValue(0.0));
+    this->declare_parameter("global_time_percent", rclcpp::ParameterValue(0.0));
+    this->declare_parameter("max_trans_vel", rclpp::ParameterValue(0.3));
+    this->declare_parameter("max_rot_vel", rclpp::ParameterValue(0.8));
+    this->declare_parameter("grid_map_service", rclcpp::ParameterValue(std::string("grid_map_service")));
+    this->declare_parameter("local_use_social_heatmap", rclcpp::ParameterValue(true));
+
+    // ! GET PARAMETERS
+    world_frame_ = this->get_parameter("world_frame").as_string();
+    planning_bounds_x_ = this->get_parameter("planning_bounds_x").as_double_array();
+    planning_bounds_y_ = this->get_parameter("planning_bounds_y").as_double_array();
+    start_state_ = this->get_parameter("start_state").as_double_array();
+    goal_map_frame_ = this->get_parameter("goal_state").as_double_array();
+    timer_period_ = this->get_parameter("timer_period").as_double();
+    solving_time_ = this->get_parameter("solving_time").as_double();
+    opport_collision_check_ = this->get_parameter("opport_collision_check").as_bool();
+    planner_name_ = this->get_parameter("planner_name").as_string();
+    reuse_last_best_solution_ = this->get_parameter("reuse_last_best_solution").as_bool();
+    local_reuse_last_best_solution_ = this->get_parameter("local_reuse_last_best_solution").as_bool();
+    optimization_objective_ = this->get_parameter("optimization_objective").as_string();
+    motion_cost_interpolation_ = this->get_parameter("motion_cost_interpolation").as_bool();
+    odometry_topic_ = this->get_parameter("odometry_topic").as_string();
+    query_goal_topic_ = this->get_parameter("query_goal_topic").as_string();
+    goto_action_ = this->get_parameter("goto_action").as_string();
+    solution_path_topic_ = this->get_parameter("solution_path_topic").as_string();
+    dynamic_bounds_ = this->get_parameter("dynamic_bounds").as_bool();
+    xy_goal_tolerance_ = this->get_parameter("xy_goal_tolerance").as_double();
+    yaw_goal_tolerance_ = this->get_parameter("yaw_goal_tolerance").as_double();
+    visualize_tree_ = this->get_parameter("visualize_tree").as_bool();
+    robot_base_radius_ = this->get_parameter("robot_base_radius").as_double();
+    local_planner_name_ = this->get_parameter("local_planner_name").as_string();
+    local_xy_goal_tolerance_ = this->get_parameter("local_xy_goal_tolerance").as_double();
+    local_optimization_objective_ = this->get_parameter("local_optimization_objective").as_string();
+    local_path_range_ = this->get_parameter("local_path_range").as_double();
+    global_time_percent_ = this->get_parameter("global_time_percent").as_double();
+    max_trans_vel_ = this->get_parameter("max_trans_vel").as_double();
+    max_rot_vel_ = this->get_parameter("max_rot_vel").as_double();
+    grid_map_service_ = this->get_parameter("grid_map_service").as_string();
+    local_use_social_heatmap_ = this->get_parameter("local_use_social_heatmap").as_bool();
 
     start_state_.resize(3);
 
