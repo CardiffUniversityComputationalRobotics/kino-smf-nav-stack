@@ -1,6 +1,6 @@
-import rospy
-from tf import transformations
+from tf_transformations import euler_from_quaternion
 from geometry_msgs.msg import Pose, PoseStamped
+from rclpy.time import Time
 
 
 class Node:
@@ -86,7 +86,7 @@ class Node:
             pose.orientation.z,
             pose.orientation.w,
         )
-        (roll, pitch, yaw) = transformations.euler_from_quaternion(quaternion)
+        (roll, pitch, yaw) = euler_from_quaternion(quaternion)
         new_state.theta = yaw
 
         return new_state
@@ -98,7 +98,7 @@ class Node:
         new_state.x = position[0]
         new_state.y = position[1]
 
-        (roll, pitch, yaw) = transformations.euler_from_quaternion(quaternion)
+        (roll, pitch, yaw) = euler_from_quaternion(quaternion)
         new_state.theta = yaw
 
         return new_state
@@ -107,7 +107,7 @@ class Node:
         """Get Pose object from current Node object position"""
         pose = PoseStamped()
         pose.header.frame_id = "map"
-        pose.header.stamp = rospy.Time.now()
+        pose.header.stamp = Time().to_msg()
 
         pose.pose.position.x = self.x
         pose.pose.position.y = self.y
