@@ -600,7 +600,7 @@ void WorldModeler::pointCloudCallback(const sensor_msgs::msg::PointCloud2::Share
 
     // ROS_INFO_STREAM("INSERT SCAN START");
 
-    insertScan(sensorToWorldTf.transform.translation, pc_ground, pc_nonground, mapping_max_range_, 0);
+    insertScan(sensorToWorldTf.transform.translation, pc_ground, pc_nonground, mapping_max_range_, minimum_range_);
     //
     //    double total_elapsed = (ros::WallTime::now() - startTime).toSec();
     //    ROS_DEBUG("Pointcloud insertion in OctomapServer done (%zu+%zu pts

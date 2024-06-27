@@ -12,7 +12,7 @@ import time
 from tf2_msgs.msg import TFMessage
 from tf2_ros import TransformListener, Buffer
 
-move_tolerance = 0.15
+move_tolerance = 0.3
 scan_tolerance_front = 0.4
 scan_tolerance_side = 0.3
 rotate_tolerance = 0.004
@@ -140,6 +140,9 @@ class PathFollower:
 
         nearest_node = 0
         distance = float("inf")
+
+        if len(path.poses) > 0:
+            self.goal = Node.from_pose(path.poses[-1].pose)
 
         for i in range(0, len(path.poses)):
             node = Node.from_pose(path.poses[i].pose)
