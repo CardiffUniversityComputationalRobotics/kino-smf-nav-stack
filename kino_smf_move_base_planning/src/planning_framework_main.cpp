@@ -110,12 +110,17 @@ public:
     double calculateAngle(double x1, double y1, double x2, double y2);
     //! get a new valid goal candidate according to the provided goal
     ob::GoalStates *findNewGoalCandidate(const ob::ScopedState<> &goal_candidate);
+    //! Callback for getting relevant agents
+    void relevantAgentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agents_msg);
+    //! method to save the computation of one path
+    void saveGridPath(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map, const std::vector<ob::State *> path_states);
 
 private:
     // ! SUBSCRIBERS
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr control_active_sub_;
+    rclcpp::Subscription<pedsim_msgs::msg::AgentStates>::SharedPtr relevant_agents_sub_;
 
     // ! PUBLISHERS
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr solution_path_rviz_pub_;
@@ -159,6 +164,7 @@ private:
 
     nav_msgs::msg::Odometry::SharedPtr odom_data_;
     geometry_msgs::msg::Twist current_robot_velocity_;
+    pedsim_msgs::msg::AgentStates::SharedPtr relevant_agents_;
 };
 
 //!  Constructor.
@@ -267,6 +273,9 @@ OnlinePlannFramework::OnlinePlannFramework()
 
     // 2D Nav Goal
     nav_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(query_goal_topic_, 1, std::bind(&OnlinePlannFramework::queryGoalCallback, this, std::placeholders::_1));
+
+    // relevant agents
+    relevant_agents_sub_ = this->create_subscription<pedsim_msgs::msg::AgentStates>("relevant_agents", 1, std::bind(&OnlinePlannFramework::relevantAgentsCallback, this, std::placeholders::_1));
 
     // Controller active flag
     // control_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(control_active_topic_, 1, std::bind(&OnlinePlannFramework::controlActiveCallback, this, std::placeholders::_1));
@@ -470,6 +479,15 @@ void OnlinePlannFramework::odomCallback(const nav_msgs::msg::Odometry::SharedPtr
 
     current_robot_velocity_ = odom_msg->twist.twist;
     odom_data_ = odom_msg;
+}
+
+//! Relevant agents callback.
+/*!
+ * Callback for getting relevant agents used for the mapping
+ */
+void OnlinePlannFramework::relevantAgentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agents_msg)
+{
+    relevant_agents_ = agents_msg;
 }
 
 //! Control active callback.
@@ -1300,6 +1318,19 @@ void OnlinePlannFramework::planningTimerCallback()
                         std::vector<ob::State *> local_path_states;
                         local_path_states = path_local.getStates();
 
+                        std::vector<double> start;
+                        std::vector<double> goal;
+
+                        start[0] = local_start[0];
+                        start[1] = local_start[1];
+                        start[2] = local_start[2];
+
+                        goal[0] = local_goal[0];
+                        goal[1] = local_goal[1];
+                        goal[2] = local_goal[2];
+
+                        saveGridPath(start, goal, relevant_agents_, grid_map_msg, local_path_states);
+
                         double distance_to_goal = sqrt(pow(local_goal[0] - local_path_states[local_path_states.size() - 1]
                                                                                ->as<ob::SE2StateSpace::StateType>()
                                                                                ->getX(),
@@ -1895,6 +1926,10 @@ double OnlinePlannFramework::calculateAngle(double x1, double y1, double x2, dou
 {
     double angle = atan2(y2 - y1, x2 - x1);
     return angle + (2.0 * M_PI * floor((M_PI - angle) / (2.0 * M_PI)));
+}
+
+void saveGridPath(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map, const std::vector<ob::State *> path_states)
+{
 }
 
 //! Main function
