@@ -1289,9 +1289,9 @@ void OnlinePlannFramework::planningTimerCallback()
                     RCLCPP_INFO(this->get_logger(), "\n\tlocal path with cost %f has been found with simple_setup\n",
                                 path_local.cost(simple_setup_local_->getProblemDefinition()->getOptimizationObjective()).value());
 
-                    if (distance_to_last_point >= 1.0 && past_local_path.cost(simple_setup_local_->getProblemDefinition()->getOptimizationObjective()).value() <= path_local.cost(simple_setup_local_->getProblemDefinition()->getOptimizationObjective()).value() && past_local_path.smoothness() <= path_local.smoothness())
+                    if (distance_to_last_point >= local_path_range_ * 0.2 && past_local_path.cost(simple_setup_local_->getProblemDefinition()->getOptimizationObjective()).value() * 0.7 <= path_local.cost(simple_setup_local_->getProblemDefinition()->getOptimizationObjective()).value() && past_local_path.smoothness() * 0.7 <= path_local.smoothness())
                     {
-                        RCLCPP_INFO(this->get_logger(), "using past local solution.\n");
+                        RCLCPP_WARN(this->get_logger(), "using past local solution.\n");
                         use_last_local_path = true;
                     }
 
@@ -1417,7 +1417,8 @@ void OnlinePlannFramework::planningTimerCallback()
 
         if (!solution_found || use_last_local_path)
         {
-            RCLCPP_WARN(this->get_logger(), "path has not been found\n");
+            if (!solution_found)
+                RCLCPP_WARN(this->get_logger(), "path has not been found\n");
 
             simple_setup_local_->clear();
 
