@@ -12,7 +12,7 @@ import time
 from tf2_msgs.msg import TFMessage
 from tf2_ros import TransformListener, Buffer
 
-move_tolerance = 0.3
+move_tolerance = 0.2
 scan_tolerance_front = 0.4
 scan_tolerance_side = 0.3
 rotate_tolerance = 0.004
@@ -218,7 +218,7 @@ class PathFollower:
             self.velocity_publisher.publish(vel_msg)
             t1 = self.node_.get_clock().now().seconds_nanoseconds()[0]
             current_distance = self.max_trans_vel * (t1 - t0)
-            time.sleep(0.001)
+            # time.sleep(0.001)
             rclpy.spin_once(self.node_)
 
         self.is_obstacle_ahead = False
@@ -250,7 +250,7 @@ class PathFollower:
                 vel_msg.linear.x = float(speed)
 
             self.velocity_publisher.publish(vel_msg)
-            time.sleep(0.001)
+            # time.sleep(0.001)
             rclpy.spin_once(self.node_)
 
     def rotate_to_goal(self, goal: Node):
@@ -267,7 +267,7 @@ class PathFollower:
             speed = self.max_rot_vel * (goal.theta - self.robot_position.theta)
             vel_msg.angular.z = float(min(self.max_rot_vel, speed))
             self.velocity_publisher.publish(vel_msg)
-            time.sleep(0.001)
+            # time.sleep(0.001)
             rclpy.spin_once(self.node_)
 
         self.velocity_publisher.publish(Twist())
@@ -282,7 +282,7 @@ class PathFollower:
 
         while time.time() - init_time < time_sweep:
             self.velocity_publisher.publish(vel_msg)
-            time.sleep(0.001)
+            # time.sleep(0.001)
             rclpy.spin_once(self.node_)
 
         vel_msg.angular.z = 0.0
