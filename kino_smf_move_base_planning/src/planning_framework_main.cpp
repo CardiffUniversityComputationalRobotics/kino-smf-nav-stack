@@ -70,6 +70,13 @@
 #include <pedsim_msgs/msg/agent_states.hpp>
 #include <pedsim_msgs/msg/agent_state.hpp>
 
+// gridmap imports
+#include <grid_map_ros/grid_map_ros.hpp>
+#include "grid_map_cv/GridMapCvConverter.hpp"
+
+#include <cv_bridge/cv_bridge.h>
+#include <opencv2/opencv.hpp>
+
 namespace ob = ompl::base;
 namespace og = ompl::geometric;
 namespace oc = ompl::control;
@@ -113,7 +120,7 @@ public:
     //! Callback for getting relevant agents
     void relevantAgentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agents_msg);
     //! method to save the computation of one path
-    void saveGridPath(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map, const std::vector<ob::State *> path_states);
+    void saveGridPath(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map_msg, const std::vector<ob::State *> path_states);
 
 private:
     // ! SUBSCRIBERS
@@ -1928,8 +1935,51 @@ double OnlinePlannFramework::calculateAngle(double x1, double y1, double x2, dou
     return angle + (2.0 * M_PI * floor((M_PI - angle) / (2.0 * M_PI)));
 }
 
-void saveGridPath(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map, const std::vector<ob::State *> path_states)
+void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map_msg, const std::vector<ob::State *> path_states)
 {
+
+    grid_map::GridMap grid_map;
+    grid_map::GridMap new_grid_map;
+    grid_map::Matrix obstacles_grid_map_;
+
+    if (grid_map::GridMapRosConverter::fromMessage(grid_map_msg, grid_map))
+    {
+
+        obstacles_grid_map_ = grid_map["obstacles"];
+
+        grid_map::Position start_pos(start[0], start[1]);
+
+        new_grid_map.setGeometry(grid_map::Length(4.0, 4.0), grid_map.getResolution(), start_pos);
+        new_grid_map.setFrameId("base_footprint");
+        new_grid_map.add("training");
+
+        for (grid_map::GridMapIterator iterator(new_grid_map); !iterator.isPastEnd(); ++iterator)
+        {
+            const grid_map::Index index(*iterator);
+            grid_map::Position val_pos;
+            new_grid_map.getPosition(index, val_pos);
+
+            // ===================================
+
+            grid_map::Position obs_pos(val_pos[0] + start_pos[0], val_pos[1] + start_pos[1]);
+            grid_map::Index obs_index;
+            grid_map.getIndex(obs_pos, obs_index);
+
+            double value = obstacles_grid_map_(obs_index(0), obs_index(1));
+            if (value > 20)
+            {
+                new_grid_map.at("training", index) = 100;
+            }
+            else
+            {
+                new_grid_map.at("training", index) = 0;
+            }
+        }
+
+        cv::Mat image;
+        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(new_grid_map, "training", CV_8UC1, 0.0, 1.0, image);
+        cv::imwrite("/home/sasm/ros/humble/system/src/kino_smf_move_base_planning", image);
+    }
 }
 
 //! Main function
