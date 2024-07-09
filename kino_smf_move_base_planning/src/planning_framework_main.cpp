@@ -138,6 +138,7 @@ private:
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr num_nodes_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr sweep_motion_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr stop_motion_pub_;
 
     // ! action server
     // KinoSmfBaseGoToActionServer *goto_action_server_;
@@ -298,6 +299,7 @@ OnlinePlannFramework::OnlinePlannFramework()
     num_nodes_pub_ = this->create_publisher<std_msgs::msg::Int32>("smf_num_nodes", 1);
     goal_reached_pub_ = this->create_publisher<std_msgs::msg::Bool>("goal_reached", 1);
     sweep_motion_pub_ = this->create_publisher<std_msgs::msg::Bool>("sweep_motion", 1);
+    stop_motion_pub_ = this->create_publisher<std_msgs::msg::Bool>("stop_motion", 1);
 
     // ! SERVICE CLIENT WAIT
     grid_map_client_ = this->create_client<GetGridMap>(grid_map_service_);
@@ -807,9 +809,12 @@ void OnlinePlannFramework::planWithSimpleSetup()
     {
         if (goal_available_)
             RCLCPP_INFO(this->get_logger(), "goal available");
+        std_msgs::msg::Bool stop_motion;
+        stop_motion.data = true;
+        stop_motion_pub_->publish(stop_motion);
         OnlinePlannFramework::planningTimerCallback();
         rclcpp::spin_some(this->get_node_base_interface());
-        // loop_rate.sleep();
+        loop_rate.sleep();
     }
 }
 
@@ -1949,8 +1954,6 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
 
         obstacles_grid_map_ = grid_map["obstacles"];
 
-        grid_map::Position start_pos(start[0], start[1]);
-
         new_grid_map.setGeometry(grid_map::Length(10.0, 10.0), grid_map.getResolution(), grid_map::Position(0.0, 0.0));
         new_grid_map.setFrameId("base_footprint");
         new_grid_map.add("training");
@@ -1965,7 +1968,7 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
 
             // ===================================
 
-            grid_map::Position obs_pos(val_pos[0] + start_pos[0], val_pos[1] + start_pos[1]);
+            grid_map::Position obs_pos(val_pos[0] + start[0], val_pos[1] + start[1]);
             grid_map::Index obs_index;
             grid_map.getIndex(obs_pos, obs_index);
 
@@ -1975,13 +1978,6 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
                 new_grid_map.at("training", index) = 1.0;
             }
         }
-        grid_map::Index start_index;
-        new_grid_map.getIndex(grid_map::Position(0.0, 0.0), start_index);
-        new_grid_map.at("training", start_index) = 2.0;
-
-        grid_map::Index goal_index;
-        new_grid_map.getIndex(grid_map::Position(goal[0] - start[0], goal[1] - start[1]), goal_index);
-        new_grid_map.at("training", goal_index) = 3.0;
 
         ob::StateSpacePtr space = simple_setup_local_->getStateSpace();
 
@@ -1991,13 +1987,31 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
             space->copyState(s, path_states[i]);
 
             grid_map::Position pos(path_states[i]->as<ob::SE2StateSpace::StateType>()->getX() - start[0], path_states[i]->as<ob::SE2StateSpace::StateType>()->getY() - start[1]);
+
             grid_map::Index index;
-            grid_map.getIndex(pos, index);
+            new_grid_map.getIndex(pos, index);
             new_grid_map.at("training", index) = 4.0;
         }
 
+        for (int i = 0; i < relevant_agents_->agent_states.size(); i++)
+        {
+
+            grid_map::Position pos(relevant_agents_->agent_states[i].pose.position.x - start[0], relevant_agents_->agent_states[i].pose.position.y - start[1]);
+            grid_map::Index index;
+            new_grid_map.getIndex(pos, index);
+            new_grid_map.at("training", index) = 5.0;
+        }
+
+        grid_map::Index start_index;
+        new_grid_map.getIndex(grid_map::Position(0.0, 0.0), start_index);
+        new_grid_map.at("training", start_index) = 2.0;
+
+        grid_map::Index goal_index;
+        new_grid_map.getIndex(grid_map::Position(goal[0] - start[0], goal[1] - start[1]), goal_index);
+        new_grid_map.at("training", goal_index) = 3.0;
+
         cv::Mat image;
-        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(new_grid_map, "training", CV_8UC1, 0.0, 5.0, image);
+        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(new_grid_map, "training", CV_8UC1, 0.0, 6.0, image);
         cv::applyColorMap(image, image, cv::COLORMAP_JET);
         cv::imwrite("/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/image_test.jpeg", image);
     }
