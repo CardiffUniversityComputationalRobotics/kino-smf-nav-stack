@@ -200,7 +200,7 @@ class PathFollower:
             self.rotate_to_goal(self.goal)
             self.velocity_publisher.publish(Twist())
 
-            self.goal_reached_publisher.publish(Bool(data=True))
+            # self.goal_reached_publisher.publish(Bool(data=True))
             self.node_.get_logger().info("Goal has been reached")
             self.is_moving = False
 
