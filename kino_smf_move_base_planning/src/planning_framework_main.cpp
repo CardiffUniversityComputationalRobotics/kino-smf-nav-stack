@@ -121,6 +121,7 @@ public:
     void relevantAgentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agents_msg);
     //! method to save the computation of one path
     void saveGridPath(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map_msg, const std::vector<ob::State *> path_states);
+    std::string getCurrentDateTime();
 
 private:
     // ! SUBSCRIBERS
@@ -173,6 +174,8 @@ private:
     nav_msgs::msg::Odometry::SharedPtr odom_data_;
     geometry_msgs::msg::Twist current_robot_velocity_;
     pedsim_msgs::msg::AgentStates::SharedPtr relevant_agents_;
+
+    double local_goal_yaw_;
 };
 
 //!  Constructor.
@@ -919,8 +922,11 @@ void OnlinePlannFramework::planningTimerCallback()
 
         last_robot_pose_.getBasis().getEulerYPR(yaw, useless_pitch, useless_roll);
 
-        start[0] = double(last_robot_pose_.getOrigin().getX() + double(current_robot_velocity_.linear.x * (solving_time_ + 0.15))); // x
-        start[1] = double(last_robot_pose_.getOrigin().getY() + double(current_robot_velocity_.linear.y * (solving_time_ + 0.15))); // y
+        // start[0] = double(last_robot_pose_.getOrigin().getX() + double(current_robot_velocity_.linear.x * (solving_time_ + 0.15))); // x
+        // start[1] = double(last_robot_pose_.getOrigin().getY() + double(current_robot_velocity_.linear.y * (solving_time_ + 0.15))); // y
+
+        start[0] = double(odom_data_->pose.pose.position.x); // x
+        start[1] = double(odom_data_->pose.pose.position.y); // y
 
         goal[0] = double(goal_odom_frame_[0]); // x
         goal[1] = double(goal_odom_frame_[1]); // y
@@ -1157,6 +1163,8 @@ void OnlinePlannFramework::planningTimerCallback()
                     new_goal_local->setThreshold(local_goal_radius_);
                     simple_setup_local_->setGoal(ob::GoalPtr(new_goal_local));
                 }
+
+                local_goal_yaw_ = local_goal[2];
 
                 if (dynamic_bounds_)
                 {
@@ -1425,7 +1433,7 @@ void OnlinePlannFramework::planningTimerCallback()
 
                                         tf2::Quaternion myQuaternion;
 
-                                        myQuaternion.setRPY(useless_roll, useless_pitch, goal_odom_frame_[2]);
+                                        myQuaternion.setRPY(useless_roll, useless_pitch, local_goal_yaw_);
 
                                         myQuaternion = myQuaternion.normalize();
 
@@ -1511,7 +1519,7 @@ void OnlinePlannFramework::planningTimerCallback()
 
                                 tf2::Quaternion myQuaternion;
 
-                                myQuaternion.setRPY(useless_roll, useless_pitch, goal_odom_frame_[2]);
+                                myQuaternion.setRPY(useless_roll, useless_pitch, local_goal_yaw_);
 
                                 myQuaternion = myQuaternion.normalize();
 
@@ -1551,7 +1559,7 @@ void OnlinePlannFramework::planningTimerCallback()
 
                                     tf2::Quaternion myQuaternion;
 
-                                    myQuaternion.setRPY(useless_roll, useless_pitch, goal_odom_frame_[2]);
+                                    myQuaternion.setRPY(useless_roll, useless_pitch, local_goal_yaw_);
 
                                     myQuaternion = myQuaternion.normalize();
 
@@ -1622,7 +1630,7 @@ void OnlinePlannFramework::planningTimerCallback()
 
                                         tf2::Quaternion myQuaternion;
 
-                                        myQuaternion.setRPY(useless_roll, useless_pitch, goal_odom_frame_[2]);
+                                        myQuaternion.setRPY(useless_roll, useless_pitch, local_goal_yaw_);
 
                                         myQuaternion = myQuaternion.normalize();
 
@@ -2013,8 +2021,29 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
         cv::Mat image;
         grid_map::GridMapCvConverter::toImage<unsigned char, 1>(new_grid_map, "training", CV_8UC1, 0.0, 6.0, image);
         cv::applyColorMap(image, image, cv::COLORMAP_JET);
-        cv::imwrite("/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/image_test.jpeg", image);
+
+        std::string filename = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/";
+        std::string date = getCurrentDateTime();
+        filename.append(date);
+        filename.append("_");
+        filename.append(std::to_string(start[2]));
+        filename.append("_");
+        filename.append(std::to_string(goal[2]));
+        filename.append(".jpeg");
+
+        cv::imwrite(filename, image);
     }
+}
+
+std::string OnlinePlannFramework::getCurrentDateTime()
+{
+    auto now = std::chrono::system_clock::now();
+    auto now_time_t = std::chrono::system_clock::to_time_t(now);
+    auto now_tm = *std::localtime(&now_time_t);
+
+    std::ostringstream oss;
+    oss << std::put_time(&now_tm, "%Y-%m-%d_%H-%M-%S");
+    return oss.str();
 }
 
 //! Main function
