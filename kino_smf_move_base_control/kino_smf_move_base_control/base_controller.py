@@ -82,7 +82,7 @@ class PathFollower:
         self.goal_subscriber = self.node_.create_subscription(
             PoseStamped, self.goal_topic, self.goal_callback, 1
         )
-        self.sweep_motion = self.node_.create_subscription(
+        self.sweep_motion_subscriber = self.node_.create_subscription(
             Bool, self.sweep_motion_topic, self.sweep_motion, 1
         )
 
