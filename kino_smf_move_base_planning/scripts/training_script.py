@@ -44,27 +44,65 @@ class CustomDataset(Dataset):
 
 # Define ASPP module
 class ASPP(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, atrous_rates):
         super(ASPP, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self.conv3 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
-        self.conv3_dilated = nn.Conv2d(
-            in_channels, out_channels, kernel_size=3, padding=2, dilation=2
+        self.atrous_blocks = nn.ModuleList()
+
+        # 1x1 convolution
+        self.atrous_blocks.append(
+            nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0)
         )
+
+        # Atrous convolutions with different rates
+        for rate in atrous_rates:
+            self.atrous_blocks.append(
+                nn.Conv2d(
+                    in_channels,
+                    out_channels,
+                    kernel_size=3,
+                    stride=1,
+                    padding=rate,
+                    dilation=rate,
+                )
+            )
+
+        # Global average pooling
         self.global_avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self.final_conv = nn.Conv2d(out_channels * 4, out_channels, kernel_size=1)
+        self.conv1x1_global = nn.Conv2d(
+            in_channels, out_channels, kernel_size=1, stride=1, padding=0
+        )
+
+        # Final convolution to aggregate all the feature maps
+        self.conv1x1_output = nn.Conv2d(
+            out_channels * (len(atrous_rates) + 2),
+            out_channels,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+        )
 
     def forward(self, x):
-        x1 = self.conv1(x)
-        x2 = self.conv3(x)
-        x3 = self.conv3_dilated(x)
-        x4 = self.global_avg_pool(x)
-        x4 = self.conv1x1(x4)
-        x4 = F.interpolate(x4, size=x.shape[2:], mode="bilinear", align_corners=False)
+        size = x.shape[2:]  # Height and Width of the input feature map
+        outputs = []
 
-        x = torch.cat([x1, x2, x3, x4], dim=1)
-        x = self.final_conv(x)
+        # Apply all the convolutions in the atrous blocks
+        for block in self.atrous_blocks:
+            outputs.append(block(x))
+
+        # Apply global average pooling
+        global_avg_pool = self.global_avg_pool(x)
+        global_avg_pool = self.conv1x1_global(global_avg_pool)
+        global_avg_pool = F.interpolate(
+            global_avg_pool, size=size, mode="bilinear", align_corners=False
+        )
+        outputs.append(global_avg_pool)
+
+        # Concatenate all the outputs
+        x = torch.cat(outputs, dim=1)
+
+        # Final 1x1 convolution to aggregate all the feature maps
+        x = self.conv1x1_output(x)
+
         return x
 
 
