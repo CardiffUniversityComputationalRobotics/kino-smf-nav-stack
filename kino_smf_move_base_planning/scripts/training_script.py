@@ -5,6 +5,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import numpy as np
+import torchvision.models as models
 
 
 # Define a custom dataset
@@ -106,19 +107,55 @@ class ASPP(nn.Module):
         return x
 
 
-class AtrousConvLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, dilation):
-        super(AtrousConvLayer, self).__init__()
-        self.conv = nn.Conv2d(
-            in_channels,
-            out_channels,
-            kernel_size=kernel_size,
-            dilation=dilation,
-            padding=dilation,
+class AtrousResNet50(nn.Module):
+    def __init__(self, pretrained=True):
+        super(AtrousResNet50, self).__init__()
+        resnet = models.resnet50(pretrained=pretrained)
+
+        self.layer0 = nn.Sequential(
+            resnet.conv1, resnet.bn1, resnet.relu, resnet.maxpool
         )
+        self.layer1 = resnet.layer1
+        self.layer2 = resnet.layer2
+
+        # Modify layer3 to use atrous convolutions with dilation rate 2
+        self.layer3 = self._make_atrous_layer(resnet.layer3, dilation=2)
+
+        # Modify layer4 to use atrous convolutions with dilation rate 4
+        self.layer4 = self._make_atrous_layer(resnet.layer4, dilation=4)
+
+        self.avgpool = resnet.avgpool
+        self.fc = resnet.fc
+
+    def _make_atrous_layer(self, layer, dilation):
+        for n, m in layer.named_modules():
+            if "conv2" in n:
+                m.dilation = (dilation, dilation)
+                m.padding = (dilation, dilation)
+        return layer
 
     def forward(self, x):
-        return self.conv(x)
+        x = self.layer0(x)
+        c1 = self.layer1(x)
+        c2 = self.layer2(c1)
+        c3 = self.layer3(c2)
+        c4 = self.layer4(c3)
+
+        return c1, c4
+
+
+# Function to load and preprocess the image
+def preprocess_image(image_path):
+    transform = transforms.Compose(
+        [
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
+    image = Image.open(image_path)
+    image = transform(image).unsqueeze(0)  # Add batch dimension
+    return image
 
 
 class FullyConnectedNN(nn.Module):
@@ -139,25 +176,42 @@ class FullyConnectedNN(nn.Module):
         return fla, fha
 
 
+class UpConvNet(nn.Module):
+    def __init__(self):
+        super(UpConvNet, self).__init__()
+        # Define a transposed convolutional layer
+        self.upconv = nn.ConvTranspose2d(
+            in_channels=64,
+            out_channels=32,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            output_padding=1,
+        )
+
+    def forward(self, x):
+        x = self.upconv(x)
+        return x
+
+
 # Define the main model
 class CustomCNN(nn.Module):
     def __init__(self):
         super(CustomCNN, self).__init__()
 
         # Convolutions for image
-        self.conv1 = AtrousConvLayer(3, 64, kernel_size=3, padding=1, dilation=5)
-        self.conv2 = AtrousConvLayer(64, 128, kernel_size=3, padding=1, dilation=5)
+        self.init_conv = AtrousResNet50(pretrained=True)
 
         # Fully connected layers for double values
         self.fcn = FullyConnectedNN()
 
         # Further convolutional layers
-        self.conv3 = nn.Conv2d(256, 128, kernel_size=3, padding=1)
+        self.conv = nn.Conv2d(256, 128, kernel_size=3, padding=1)
         self.aspp = ASPP(128, 128)
         self.upsample = nn.Upsample(
             scale_factor=2, mode="bilinear", align_corners=False
         )
-        self.final_conv = nn.Conv2d(256, 1, kernel_size=3, padding=1)
+        self.final_conv = UpConvNet()
 
     def forward(self, image, robot_size, start_orientation, goal_orientation):
 
@@ -165,37 +219,35 @@ class CustomCNN(nn.Module):
 
         # Individual attributes
         path_attributes = torch.tensor(
-            [[robot_size, start_orientation, goal_orientation]], dtype=torch.float32
+            [robot_size, start_orientation, goal_orientation], dtype=torch.float32
         )
 
         fla, fha = self.fcn(path_attributes)
-        fla = F.relu(fla)
-        fha = F.relu(fha)
 
         # input image convolutions
 
-        l_conv = F.relu(self.conv1(image))
-        h_conv = F.relu(self.conv2(l_conv))
+        image = preprocess_image(image)
+
+        c1, c4 = self.init_conv(image)
 
         # ! CONCATENATIONS
 
-        low_concat = torch.cat((l_conv, fla), dim=1)
-        high_concat = torch.cat((h_conv, fha), dim=1)
+        low_concat = torch.cat((c1, fla), dim=3)
+        high_concat = torch.cat((c4, fha), dim=3)
 
-        # ! high res section second convolution
+        # ! low res section second convolution
 
-        h_conv = F.relu(self.conv2(high_concat))
+        fcl = F.relu(self.conv(low_concat))
 
         # ! ASPP AND UP SAMPLING OF HIGH RES
 
-        h_aspp = self.aspp(h_conv)
-        h_upsample = self.upsample(h_aspp)
+        fh = self.aspp(high_concat)
+        fh = self.upsample(fh)
 
         # ! FINAL CONCATENATION
-        final_concat = torch.cat(low_concat, h_upsample)
+        final_concat = torch.cat(fcl, fh)
 
-        x = self.upsample(final_concat)
-        x = self.final_conv(x)
+        x = self.final_conv(final_concat)
 
         return torch.sigmoid(x)
 
