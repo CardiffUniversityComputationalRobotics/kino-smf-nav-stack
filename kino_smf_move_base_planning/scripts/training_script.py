@@ -6,6 +6,9 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import numpy as np
 import torchvision.models as models
+import sys
+import os
+import cv2
 
 
 # Define a custom dataset
@@ -13,12 +16,14 @@ class CustomDataset(Dataset):
     def __init__(
         self,
         image_paths,
+        pdf_maps,
         robot_size,
         start_orientation,
         goal_orientation,
         transform=None,
     ):
         self.image_paths = image_paths
+        self.pdf_maps = pdf_maps
         self.robot_size = robot_size
         self.start_orientation = start_orientation
         self.goal_orientation = goal_orientation
@@ -31,6 +36,7 @@ class CustomDataset(Dataset):
         image = Image.open(self.image_paths[idx])
         if self.transform:
             image = self.transform(image)
+            pdf_image = self.transform(pdf_maps[idx])
 
         robot_size = torch.tensor([self.robot_size[idx]], dtype=torch.float32)
         start_orientation = torch.tensor(
@@ -40,7 +46,7 @@ class CustomDataset(Dataset):
             [self.goal_orientation[idx]], dtype=torch.float32
         )
 
-        return image, robot_size, start_orientation, goal_orientation
+        return image, pdf_image, robot_size, start_orientation, goal_orientation
 
 
 # Define ASPP module
@@ -207,7 +213,7 @@ class CustomCNN(nn.Module):
 
         # Further convolutional layers
         self.conv = nn.Conv2d(256, 128, kernel_size=3, padding=1)
-        self.aspp = ASPP(128, 128)
+        self.aspp = ASPP(128, 128, [3, 6, 12])
         self.upsample = nn.Upsample(
             scale_factor=2, mode="bilinear", align_corners=False
         )
@@ -252,18 +258,141 @@ class CustomCNN(nn.Module):
         return torch.sigmoid(x)
 
 
+def list_files_in_directory(directory):
+
+    filename_list = []
+
+    try:
+        # List all files and directories in the specified directory
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.is_file():
+                    filename_list.append(entry.name)
+    except FileNotFoundError:
+        print(f"The directory '{directory}' does not exist.")
+    except PermissionError:
+        print(f"Permission denied to access the directory '{directory}'.")
+
+    return filename_list
+
+
+def get_images_and_params(directory):
+
+    filenames = list_files_in_directory(directory)
+
+    complete_file_paths = []
+    start_orientation = []
+    goal_orientation = []
+
+    for i in filenames:
+        complete_file_paths.append(directory + "/" + i)
+        split_name = i.split("_")
+        start_orientation.append(float(round(float(split_name[2]), 3)))
+        goal_orientation.append(float(round(float(split_name[-1][:-5]), 3)))
+
+    return complete_file_paths, start_orientation, goal_orientation
+
+
+def create_probability_map(image_size, path_points, sigma=1.0):
+    """
+    Creates a probability map given a list of path points.
+
+    :param image_size: Tuple (H, W) indicating the size of the map.
+    :param path_points: List of (x, y) tuples indicating the path.
+    :param sigma: Standard deviation for the Gaussian blur.
+    :return: Probability map as a numpy array of shape (H, W).
+    """
+    probability_map = np.zeros(image_size, dtype=np.float32)
+
+    # Draw the path on the map
+    for point in path_points:
+        cv2.circle(probability_map, point, radius=1, color=1.0, thickness=-1)
+
+    # Apply Gaussian blur to create a smooth probability distribution
+    probability_map = cv2.GaussianBlur(probability_map, (0, 0), sigma)
+    probability_map = np.clip(probability_map, 0, 1)
+
+    return probability_map
+
+
+def get_pdf_images(directory):
+
+    filenames = list_files_in_directory(directory)
+
+    complete_file_paths = []
+
+    for i in filenames:
+        complete_file_paths.append(directory + "/" + i)
+
+    pdf_maps = []
+
+    for i in complete_file_paths:
+        image = cv2.imread(i)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        image = image.astype(np.float32)
+        image = (image / 255.0) * 6.0
+
+        for i in range(0, len(image)):
+            for j in range(0, len(image)):
+                if 5.25 > image[i][j] > 4.0:
+                    image[i, j] = 100.0
+                else:
+                    image[i, j] = 0.0
+
+        probability_map = cv2.GaussianBlur(image, (0, 0), 1.0)
+        probability_map = np.clip(probability_map, 0, 1)
+
+        pdf_maps.append(probability_map)
+
+    return pdf_maps
+
+def train_model(model, train_loader, criterion, optimizer, num_epochs=25):
+    model.train()
+    for epoch in range(num_epochs):
+        running_loss = 0.0
+        for inputs, additional_params, labels in train_loader:
+            inputs, additional_params, labels = inputs.to(device), additional_params.to(device), labels.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(inputs, additional_params)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item() * inputs.size(0)
+
+        epoch_loss = running_loss / len(train_loader.dataset)
+        print(f'Epoch {epoch}/{num_epochs - 1}, Loss: {epoch_loss:.4f}')
+
+    print('Training complete')
+    return model
+
+
 # Hyperparameters and dataset setup
-image_paths = ["path/to/image1.jpg", "path/to/image2.jpg"]  # Replace with actual paths
-robot_sizes = [0.5, 0.7]
-start_orientations = [0.0, 0.5]
-goal_orientations = [1.0, 0.3]
+
+raw_image_path = "/home/sasm/Downloads/dataset/test"
+path_image_path = "/home/sasm/Downloads/dataset/train"
+
+image_paths, start_orientations, goal_orientations = get_images_and_params(
+    raw_image_path
+)
+
+start_orientations = np.array(start_orientations).astype(np.float32)
+goal_orientations = np.array(goal_orientations).astype(np.float32)
+robot_sizes = np.array([0.35] * len(image_paths)).astype(np.float32)
+
+pdf_maps = get_pdf_images(path_image_path)
+
 
 transform = transforms.Compose([transforms.Resize((128, 128)), transforms.ToTensor()])
 
 dataset = CustomDataset(
-    image_paths, robot_sizes, start_orientations, goal_orientations, transform
+    image_paths, pdf_maps, robot_sizes, start_orientations, goal_orientations, transform
 )
-dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
+
+
+train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
+
 
 # Training setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -271,23 +400,5 @@ model = CustomCNN().to(device)
 criterion = nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-# Training loop
-num_epochs = 10
-for epoch in range(num_epochs):
-    model.train()
-    for images, robot_sizes, start_orientations, goal_orientations in dataloader:
-        images = images.to(device)
-        robot_sizes = robot_sizes.to(device)
-        start_orientations = start_orientations.to(device)
-        goal_orientations = goal_orientations.to(device)
 
-        outputs = model(images, robot_sizes, start_orientations, goal_orientations)
-        loss = criterion(
-            outputs, images
-        )  # Assuming the target is the same as input for simplicity
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}")
+trained_model = train_model(model, train_loader, criterion, optimizer, num_epochs=25)
