@@ -34,9 +34,10 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, idx):
         image = Image.open(self.image_paths[idx])
+        pdf_image = Image.fromarray(self.pdf_maps[idx])
         if self.transform:
             image = self.transform(image)
-            pdf_image = self.transform(pdf_maps[idx])
+            pdf_image = self.transform(pdf_image)
 
         robot_size = torch.tensor([self.robot_size[idx]], dtype=torch.float32)
         start_orientation = torch.tensor(
@@ -346,15 +347,30 @@ def get_pdf_images(directory):
 
     return pdf_maps
 
+
+# image, pdf_image, robot_size, start_orientation, goal_orientation
 def train_model(model, train_loader, criterion, optimizer, num_epochs=25):
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
-        for inputs, additional_params, labels in train_loader:
-            inputs, additional_params, labels = inputs.to(device), additional_params.to(device), labels.to(device)
+
+        for (
+            inputs,
+            labels,
+            robot_size,
+            start_orientations,
+            goal_orientations,
+        ) in train_loader:
+            inputs, labels, robot_size, start_orientations, goal_orientations = (
+                inputs.to(device),
+                labels.to(device),
+                robot_size.to(device),
+                start_orientations.to(device),
+                goal_orientations.to(device),
+            )
 
             optimizer.zero_grad()
-            outputs = model(inputs, additional_params)
+            outputs = model(inputs, robot_size, start_orientations, goal_orientations)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -362,9 +378,9 @@ def train_model(model, train_loader, criterion, optimizer, num_epochs=25):
             running_loss += loss.item() * inputs.size(0)
 
         epoch_loss = running_loss / len(train_loader.dataset)
-        print(f'Epoch {epoch}/{num_epochs - 1}, Loss: {epoch_loss:.4f}')
+        print(f"Epoch {epoch}/{num_epochs - 1}, Loss: {epoch_loss:.4f}")
 
-    print('Training complete')
+    print("Training complete")
     return model
 
 
