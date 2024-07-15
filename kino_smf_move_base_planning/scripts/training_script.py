@@ -94,10 +94,7 @@ class ASPP(nn.Module):
 
         # Apply all the convolutions in the atrous blocks
         for block in self.atrous_blocks:
-            print(x.size())
-            out = block(x)
-            print(f"Atrous block output shape: {out.shape}")
-            outputs.append(out)
+            outputs.append(block(x))
 
         # Apply global average pooling
         global_avg_pool = self.global_avg_pool(x)
@@ -107,11 +104,8 @@ class ASPP(nn.Module):
         )
         outputs.append(global_avg_pool)
 
-        print(f"Global average pooling output shape: {global_avg_pool.shape}")
-
         # Concatenate all the outputs
         x = torch.cat(outputs, dim=1)
-        print(f"Concatenated output shape: {x.shape}")
 
         # Final 1x1 convolution to aggregate all the feature maps
         x = self.conv1x1_output(x)
@@ -181,7 +175,7 @@ class UpConvNet(nn.Module):
         super(UpConvNet, self).__init__()
         # Define a transposed convolutional layer
         self.upconv = nn.ConvTranspose2d(
-            in_channels=64,
+            in_channels=256,
             out_channels=32,
             kernel_size=3,
             stride=2,
@@ -209,7 +203,7 @@ class CustomCNN(nn.Module):
         self.conv = nn.Conv2d(
             288, 128, kernel_size=3, padding=1
         )  # Adjusted in_channels
-        self.aspp = ASPP(2212, 128, [3, 6, 12])  # Adjusted in_channels
+        self.aspp = ASPP(2112, 128, [3, 6, 12])  # Adjusted in_channels
         self.upsample = nn.Upsample(
             scale_factor=2, mode="bilinear", align_corners=False
         )
@@ -242,9 +236,6 @@ class CustomCNN(nn.Module):
             (c4, fha.permute(0, 3, 1, 2)), dim=1
         )  # Concatenate along channel dimension
 
-        print(f"low_concat size: {low_concat.size()}")  # Debug print
-        print(f"high_concat size: {high_concat.size()}")  # Debug print
-
         # Low res section second convolution
         fcl = F.relu(self.conv(low_concat))
 
@@ -252,8 +243,15 @@ class CustomCNN(nn.Module):
         fh = self.aspp(high_concat)
         fh = self.upsample(fh)
 
+        fcl_resized = F.interpolate(
+            fcl, size=(fh.size(2), fh.size(3)), mode="bilinear", align_corners=False
+        )
+
+        print(fcl_resized.size())
+        print(fh.size())
+
         # Final concatenation
-        final_concat = torch.cat((fcl, fh), dim=1)
+        final_concat = torch.cat((fcl_resized, fh), dim=1)
 
         x = self.final_conv(final_concat)
 
@@ -371,6 +369,8 @@ def train_model(model, train_loader, criterion, optimizer, num_epochs=25):
 
             optimizer.zero_grad()
             outputs = model(inputs, robot_size, start_orientations, goal_orientations)
+            print(outputs.size())
+            print(labels.size())
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
