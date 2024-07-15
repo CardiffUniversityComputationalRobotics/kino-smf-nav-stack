@@ -170,24 +170,6 @@ class FullyConnectedNN(nn.Module):
         return fla, fha
 
 
-class UpConvNet(nn.Module):
-    def __init__(self):
-        super(UpConvNet, self).__init__()
-        # Define a transposed convolutional layer
-        self.upconv = nn.ConvTranspose2d(
-            in_channels=256,
-            out_channels=32,
-            kernel_size=3,
-            stride=2,
-            padding=1,
-            output_padding=1,
-        )
-
-    def forward(self, x):
-        x = self.upconv(x)
-        return x
-
-
 # Define the main model
 class CustomCNN(nn.Module):
     def __init__(self):
@@ -207,7 +189,9 @@ class CustomCNN(nn.Module):
         self.upsample = nn.Upsample(
             scale_factor=2, mode="bilinear", align_corners=False
         )
-        self.final_conv = UpConvNet()
+
+        # Ensure the final output has 1 channel
+        self.final_conv = nn.Conv2d(256, 1, kernel_size=3, padding=1)
 
     def forward(self, image, robot_size, start_orientation, goal_orientation):
         # Combine individual attributes into a single tensor
@@ -243,17 +227,19 @@ class CustomCNN(nn.Module):
         fh = self.aspp(high_concat)
         fh = self.upsample(fh)
 
+        # Ensure dimensions match for concatenation
         fcl_resized = F.interpolate(
             fcl, size=(fh.size(2), fh.size(3)), mode="bilinear", align_corners=False
         )
 
-        print(fcl_resized.size())
-        print(fh.size())
-
         # Final concatenation
         final_concat = torch.cat((fcl_resized, fh), dim=1)
 
+        # Apply final convolution to get the output with the desired number of channels
         x = self.final_conv(final_concat)
+
+        # Ensure output size is [batch_size, 1, 128, 128]
+        x = F.interpolate(x, size=(128, 128), mode="bilinear", align_corners=False)
 
         return torch.sigmoid(x)
 
