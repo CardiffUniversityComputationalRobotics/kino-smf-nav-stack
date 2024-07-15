@@ -6,7 +6,6 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import numpy as np
 import torchvision.models as models
-import sys
 import os
 import cv2
 
@@ -95,7 +94,10 @@ class ASPP(nn.Module):
 
         # Apply all the convolutions in the atrous blocks
         for block in self.atrous_blocks:
-            outputs.append(block(x))
+            print(x.size())
+            out = block(x)
+            print(f"Atrous block output shape: {out.shape}")
+            outputs.append(out)
 
         # Apply global average pooling
         global_avg_pool = self.global_avg_pool(x)
@@ -105,8 +107,11 @@ class ASPP(nn.Module):
         )
         outputs.append(global_avg_pool)
 
+        print(f"Global average pooling output shape: {global_avg_pool.shape}")
+
         # Concatenate all the outputs
         x = torch.cat(outputs, dim=1)
+        print(f"Concatenated output shape: {x.shape}")
 
         # Final 1x1 convolution to aggregate all the feature maps
         x = self.conv1x1_output(x)
@@ -151,20 +156,6 @@ class AtrousResNet50(nn.Module):
         return c1, c4
 
 
-# Function to load and preprocess the image
-def preprocess_image(image_path):
-    transform = transforms.Compose(
-        [
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
-    image = Image.open(image_path)
-    image = transform(image).unsqueeze(0)  # Add batch dimension
-    return image
-
-
 class FullyConnectedNN(nn.Module):
     def __init__(self):
         super(FullyConnectedNN, self).__init__()
@@ -172,6 +163,8 @@ class FullyConnectedNN(nn.Module):
         self.fc2 = nn.Linear(3, 64)
 
     def forward(self, attributes):
+
+        attributes = attributes.view(attributes.size(0), -1)
         fla = self.fc1(attributes)
         fla = torch.relu(fla)
         fla = fla.view(-1, 1, 1, 32)  # Reshape to (batch_size, 1, 1, 32)
@@ -213,46 +206,54 @@ class CustomCNN(nn.Module):
         self.fcn = FullyConnectedNN()
 
         # Further convolutional layers
-        self.conv = nn.Conv2d(256, 128, kernel_size=3, padding=1)
-        self.aspp = ASPP(128, 128, [3, 6, 12])
+        self.conv = nn.Conv2d(
+            288, 128, kernel_size=3, padding=1
+        )  # Adjusted in_channels
+        self.aspp = ASPP(2212, 128, [3, 6, 12])  # Adjusted in_channels
         self.upsample = nn.Upsample(
             scale_factor=2, mode="bilinear", align_corners=False
         )
         self.final_conv = UpConvNet()
 
     def forward(self, image, robot_size, start_orientation, goal_orientation):
-
-        # ! FIRST PROCESS
-
-        # Individual attributes
-        path_attributes = torch.tensor(
-            [robot_size, start_orientation, goal_orientation], dtype=torch.float32
+        # Combine individual attributes into a single tensor
+        path_attributes = torch.stack(
+            [robot_size, start_orientation, goal_orientation], dim=1
         )
 
+        # Pass attributes through the fully connected network
         fla, fha = self.fcn(path_attributes)
 
         # input image convolutions
-
-        image = preprocess_image(image)
-
         c1, c4 = self.init_conv(image)
 
-        # ! CONCATENATIONS
+        # Concatenations
+        fla = fla.expand(
+            -1, c1.size(2), c1.size(3), -1
+        )  # Adjust fla to match spatial dimensions
+        low_concat = torch.cat(
+            (c1, fla.permute(0, 3, 1, 2)), dim=1
+        )  # Concatenate along channel dimension
 
-        low_concat = torch.cat((c1, fla), dim=3)
-        high_concat = torch.cat((c4, fha), dim=3)
+        fha = fha.expand(
+            -1, c4.size(2), c4.size(3), -1
+        )  # Adjust fha to match spatial dimensions
+        high_concat = torch.cat(
+            (c4, fha.permute(0, 3, 1, 2)), dim=1
+        )  # Concatenate along channel dimension
 
-        # ! low res section second convolution
+        print(f"low_concat size: {low_concat.size()}")  # Debug print
+        print(f"high_concat size: {high_concat.size()}")  # Debug print
 
+        # Low res section second convolution
         fcl = F.relu(self.conv(low_concat))
 
-        # ! ASPP AND UP SAMPLING OF HIGH RES
-
+        # ASPP and upsampling of high res
         fh = self.aspp(high_concat)
         fh = self.upsample(fh)
 
-        # ! FINAL CONCATENATION
-        final_concat = torch.cat(fcl, fh)
+        # Final concatenation
+        final_concat = torch.cat((fcl, fh), dim=1)
 
         x = self.final_conv(final_concat)
 
@@ -348,7 +349,6 @@ def get_pdf_images(directory):
     return pdf_maps
 
 
-# image, pdf_image, robot_size, start_orientation, goal_orientation
 def train_model(model, train_loader, criterion, optimizer, num_epochs=25):
     model.train()
     for epoch in range(num_epochs):
