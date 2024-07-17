@@ -122,6 +122,7 @@ public:
     //! method to save the computation of one path
     void saveGridPath(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map_msg, const std::vector<ob::State *> path_states);
     std::string getCurrentDateTime();
+    double wrapAngle(double angle);
 
 private:
     // ! SUBSCRIBERS
@@ -1955,6 +1956,7 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
 
     grid_map::GridMap grid_map;
     grid_map::GridMap xy_grid_map;
+    grid_map::GridMap yaw_grid_map;
     grid_map::Matrix obstacles_grid_map_;
 
     if (grid_map::GridMapRosConverter::fromMessage(grid_map_msg, grid_map))
@@ -1965,8 +1967,12 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
         xy_grid_map.setGeometry(grid_map::Length(10.0, 10.0), grid_map.getResolution(), grid_map::Position(0.0, 0.0));
         xy_grid_map.setFrameId("base_footprint");
         xy_grid_map.add("training");
-
         xy_grid_map["training"].setConstant(0.0);
+
+        yaw_grid_map.setGeometry(grid_map::Length(10.0, 10.0), grid_map.getResolution(), grid_map::Position(0.0, 0.0));
+        yaw_grid_map.setFrameId("base_footprint");
+        yaw_grid_map.add("training");
+        yaw_grid_map["training"].setConstant(0.0);
 
         // ! OBSTACLES
 
@@ -2016,7 +2022,7 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
 
         cv::Mat test_image;
         grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "training", CV_8UC1, 0.0, 6.0, test_image);
-        cv::applyColorMap(test_image, test_image, cv::COLORMAP_JET);
+        // cv::applyColorMap(test_image, test_image, cv::COLORMAP_JET);
 
         std::string test_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test/";
         std::string date = getCurrentDateTime();
@@ -2045,11 +2051,15 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
             grid_map::Index index;
             xy_grid_map.getIndex(pos, index);
             xy_grid_map.at("training", index) = 4.0;
+
+            // YAW GRIDMAP
+
+            yaw_grid_map.at("training", index) = wrapAngle(path_states[i]->as<ob::SE2StateSpace::StateType>()->getYaw());
         }
 
         cv::Mat train_image;
         grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "training", CV_8UC1, 0.0, 6.0, train_image);
-        cv::applyColorMap(train_image, train_image, cv::COLORMAP_JET);
+        // cv::applyColorMap(train_image, train_image, cv::COLORMAP_JET);
 
         std::string train_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/";
         train_filename.append(date);
@@ -2060,6 +2070,22 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
         train_filename.append(".jpeg");
 
         cv::imwrite(train_filename, train_image);
+
+        // SAVE YAW GRIDMAP
+
+        cv::Mat train_yaw_image;
+        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(yaw_grid_map, "training", CV_8UC1, 0.0, 2 * M_PI, train_yaw_image);
+        // cv::applyColorMap(train_yaw_image, train_yaw_image, cv::COLORMAP_JET);
+
+        std::string train_yaw_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/";
+        train_yaw_filename.append(date);
+        train_yaw_filename.append("_");
+        train_yaw_filename.append(std::to_string(start[2]));
+        train_yaw_filename.append("_");
+        train_yaw_filename.append(std::to_string(goal[2]));
+        train_yaw_filename.append("yaw.jpeg");
+
+        cv::imwrite(train_yaw_filename, train_yaw_image);
     }
 }
 
@@ -2072,6 +2098,20 @@ std::string OnlinePlannFramework::getCurrentDateTime()
     std::ostringstream oss;
     oss << std::put_time(&now_tm, "%Y-%m-%d_%H-%M-%S");
     return oss.str();
+}
+
+double OnlinePlannFramework::wrapAngle(double angle)
+{
+    // fmod returns the remainder of angle / TWO_PI, which can be negative
+    angle = fmod(angle, 2.0 * M_PI);
+
+    // Adjust the result to ensure it's in the range [0, 2*pi)
+    if (angle < 0)
+    {
+        angle += 2.0 * M_PI;
+    }
+
+    return angle;
 }
 
 //! Main function
