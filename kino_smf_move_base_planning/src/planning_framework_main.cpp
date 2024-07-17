@@ -2057,6 +2057,12 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
             yaw_grid_map.at("training", index) = wrapAngle(path_states[i]->as<ob::SE2StateSpace::StateType>()->getYaw());
         }
 
+        // ! START
+        xy_grid_map.at("training", start_index) = 2.0;
+
+        // ! GOAL
+        xy_grid_map.at("training", goal_index) = 3.0;
+
         cv::Mat train_image;
         grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "training", CV_8UC1, 0.0, 6.0, train_image);
         // cv::applyColorMap(train_image, train_image, cv::COLORMAP_JET);
