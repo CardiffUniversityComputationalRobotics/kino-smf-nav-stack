@@ -1968,6 +1968,8 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
 
         new_grid_map["training"].setConstant(0.0);
 
+        // ! OBSTACLES
+
         for (grid_map::GridMapIterator iterator(new_grid_map); !iterator.isPastEnd(); ++iterator)
         {
             const grid_map::Index index(*iterator);
@@ -1987,6 +1989,51 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
             }
         }
 
+
+        // ! RELEVANT AGENTS
+
+        for (int i = 0; i < relevant_agents_->agent_states.size(); i++)
+        {
+
+            grid_map::Position pos(relevant_agents_->agent_states[i].pose.position.x - start[0], relevant_agents_->agent_states[i].pose.position.y - start[1]);
+            grid_map::Index index;
+            new_grid_map.getIndex(pos, index);
+            new_grid_map.at("training", index) = 5.0;
+        }
+
+        // ! START
+
+        grid_map::Index start_index;
+        new_grid_map.getIndex(grid_map::Position(0.0, 0.0), start_index);
+        new_grid_map.at("training", start_index) = 2.0;
+
+        // ! GOAL
+
+        grid_map::Index goal_index;
+        new_grid_map.getIndex(grid_map::Position(goal[0] - start[0], goal[1] - start[1]), goal_index);
+        new_grid_map.at("training", goal_index) = 3.0;
+
+        // SAVE IMAGE WITHOUT PATH - TEST
+
+        cv::Mat test_image;
+        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(new_grid_map, "training", CV_8UC1, 0.0, 6.0, test_image);
+        cv::applyColorMap(test_image, test_image, cv::COLORMAP_JET);
+
+        std::string test_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test/";
+        std::string date = getCurrentDateTime();
+        test_filename.append(date);
+        test_filename.append("_");
+        test_filename.append(std::to_string(start[2]));
+        test_filename.append("_");
+        test_filename.append(std::to_string(goal[2]));
+        test_filename.append(".jpeg");
+
+        cv::imwrite(test_filename, test_image);
+
+        // SAVE IMAGE WITH PATH
+
+        // ! PATH STATES
+
         ob::StateSpacePtr space = simple_setup_local_->getStateSpace();
 
         for (int i = 0; i < path_states.size(); i++)
@@ -2001,37 +2048,19 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
             new_grid_map.at("training", index) = 4.0;
         }
 
-        for (int i = 0; i < relevant_agents_->agent_states.size(); i++)
-        {
+        cv::Mat train_image;
+        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(new_grid_map, "training", CV_8UC1, 0.0, 6.0, train_image);
+        cv::applyColorMap(train_image, train_image, cv::COLORMAP_JET);
 
-            grid_map::Position pos(relevant_agents_->agent_states[i].pose.position.x - start[0], relevant_agents_->agent_states[i].pose.position.y - start[1]);
-            grid_map::Index index;
-            new_grid_map.getIndex(pos, index);
-            new_grid_map.at("training", index) = 5.0;
-        }
+        std::string train_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/";
+        train_filename.append(date);
+        train_filename.append("_");
+        train_filename.append(std::to_string(start[2]));
+        train_filename.append("_");
+        train_filename.append(std::to_string(goal[2]));
+        train_filename.append(".jpeg");
 
-        grid_map::Index start_index;
-        new_grid_map.getIndex(grid_map::Position(0.0, 0.0), start_index);
-        new_grid_map.at("training", start_index) = 2.0;
-
-        grid_map::Index goal_index;
-        new_grid_map.getIndex(grid_map::Position(goal[0] - start[0], goal[1] - start[1]), goal_index);
-        new_grid_map.at("training", goal_index) = 3.0;
-
-        cv::Mat image;
-        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(new_grid_map, "training", CV_8UC1, 0.0, 6.0, image);
-        cv::applyColorMap(image, image, cv::COLORMAP_JET);
-
-        std::string filename = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/";
-        std::string date = getCurrentDateTime();
-        filename.append(date);
-        filename.append("_");
-        filename.append(std::to_string(start[2]));
-        filename.append("_");
-        filename.append(std::to_string(goal[2]));
-        filename.append(".jpeg");
-
-        cv::imwrite(filename, image);
+        cv::imwrite(train_filename, train_image);
     }
 }
 
