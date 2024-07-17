@@ -1954,7 +1954,7 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
 {
 
     grid_map::GridMap grid_map;
-    grid_map::GridMap new_grid_map;
+    grid_map::GridMap xy_grid_map;
     grid_map::Matrix obstacles_grid_map_;
 
     if (grid_map::GridMapRosConverter::fromMessage(grid_map_msg, grid_map))
@@ -1962,19 +1962,19 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
 
         obstacles_grid_map_ = grid_map["obstacles"];
 
-        new_grid_map.setGeometry(grid_map::Length(10.0, 10.0), grid_map.getResolution(), grid_map::Position(0.0, 0.0));
-        new_grid_map.setFrameId("base_footprint");
-        new_grid_map.add("training");
+        xy_grid_map.setGeometry(grid_map::Length(10.0, 10.0), grid_map.getResolution(), grid_map::Position(0.0, 0.0));
+        xy_grid_map.setFrameId("base_footprint");
+        xy_grid_map.add("training");
 
-        new_grid_map["training"].setConstant(0.0);
+        xy_grid_map["training"].setConstant(0.0);
 
         // ! OBSTACLES
 
-        for (grid_map::GridMapIterator iterator(new_grid_map); !iterator.isPastEnd(); ++iterator)
+        for (grid_map::GridMapIterator iterator(xy_grid_map); !iterator.isPastEnd(); ++iterator)
         {
             const grid_map::Index index(*iterator);
             grid_map::Position val_pos;
-            new_grid_map.getPosition(index, val_pos);
+            xy_grid_map.getPosition(index, val_pos);
 
             // ===================================
 
@@ -1985,10 +1985,9 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
             double value = obstacles_grid_map_(obs_index(0), obs_index(1));
             if (value > 20)
             {
-                new_grid_map.at("training", index) = 1.0;
+                xy_grid_map.at("training", index) = 1.0;
             }
         }
-
 
         // ! RELEVANT AGENTS
 
@@ -1997,26 +1996,26 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
 
             grid_map::Position pos(relevant_agents_->agent_states[i].pose.position.x - start[0], relevant_agents_->agent_states[i].pose.position.y - start[1]);
             grid_map::Index index;
-            new_grid_map.getIndex(pos, index);
-            new_grid_map.at("training", index) = 5.0;
+            xy_grid_map.getIndex(pos, index);
+            xy_grid_map.at("training", index) = 5.0;
         }
 
         // ! START
 
         grid_map::Index start_index;
-        new_grid_map.getIndex(grid_map::Position(0.0, 0.0), start_index);
-        new_grid_map.at("training", start_index) = 2.0;
+        xy_grid_map.getIndex(grid_map::Position(0.0, 0.0), start_index);
+        xy_grid_map.at("training", start_index) = 2.0;
 
         // ! GOAL
 
         grid_map::Index goal_index;
-        new_grid_map.getIndex(grid_map::Position(goal[0] - start[0], goal[1] - start[1]), goal_index);
-        new_grid_map.at("training", goal_index) = 3.0;
+        xy_grid_map.getIndex(grid_map::Position(goal[0] - start[0], goal[1] - start[1]), goal_index);
+        xy_grid_map.at("training", goal_index) = 3.0;
 
         // SAVE IMAGE WITHOUT PATH - TEST
 
         cv::Mat test_image;
-        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(new_grid_map, "training", CV_8UC1, 0.0, 6.0, test_image);
+        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "training", CV_8UC1, 0.0, 6.0, test_image);
         cv::applyColorMap(test_image, test_image, cv::COLORMAP_JET);
 
         std::string test_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test/";
@@ -2044,12 +2043,12 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
             grid_map::Position pos(path_states[i]->as<ob::SE2StateSpace::StateType>()->getX() - start[0], path_states[i]->as<ob::SE2StateSpace::StateType>()->getY() - start[1]);
 
             grid_map::Index index;
-            new_grid_map.getIndex(pos, index);
-            new_grid_map.at("training", index) = 4.0;
+            xy_grid_map.getIndex(pos, index);
+            xy_grid_map.at("training", index) = 4.0;
         }
 
         cv::Mat train_image;
-        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(new_grid_map, "training", CV_8UC1, 0.0, 6.0, train_image);
+        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "training", CV_8UC1, 0.0, 6.0, train_image);
         cv::applyColorMap(train_image, train_image, cv::COLORMAP_JET);
 
         std::string train_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/";
