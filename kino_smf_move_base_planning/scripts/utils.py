@@ -72,20 +72,35 @@ def get_pdf_images(directory):
     pdf_maps = []
 
     for i in complete_file_paths:
-        image = cv2.imread(i)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        image = cv2.imread(i, cv2.IMREAD_GRAYSCALE)
         image = image.astype(np.float32)
         image = (image / 255.0) * 6.0
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(image)
+
+        pdf_image = np.copy(image)
 
         for i in range(0, len(image)):
             for j in range(0, len(image)):
-                if 5.25 > image[i][j] > 4.0:
-                    image[i, j] = 100.0
+                if 4.2 > image[i][j] > 3.8:
+                    pdf_image[i, j] = 1.0
                 else:
-                    image[i, j] = 0.0
+                    pdf_image[i, j] = 0.0
 
-        probability_map = cv2.GaussianBlur(image, (0, 0), 1.0)
-        probability_map = np.clip(probability_map, 0, 1)
+        # cv2.imwrite("pdf_image.png", image)
+
+        probability_map = cv2.GaussianBlur(pdf_image, (0, 0), 1.5)
+
+        for i in range(0, len(image)):
+            for j in range(0, len(image)):
+                if 4.2 > image[i][j] > 3.8:
+                    probability_map[i, j] = 1.0
+
+        probability_map = np.around(probability_map, decimals=4)
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(probability_map)
+        # cv2.imwrite("pdf_image.png", probability_map * 255)
+        # probability_map = np.clip(probability_map, 0, 1)
 
         pdf_maps.append(probability_map)
 
