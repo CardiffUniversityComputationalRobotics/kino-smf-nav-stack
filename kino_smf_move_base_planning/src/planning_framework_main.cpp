@@ -1974,7 +1974,7 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
         yaw_grid_map.setGeometry(grid_map::Length(10.0, 10.0), grid_map.getResolution(), grid_map::Position(0.0, 0.0));
         yaw_grid_map.setFrameId("base_footprint");
         yaw_grid_map.add("training");
-        yaw_grid_map["training"].setConstant(0.0);
+        yaw_grid_map["training"].setConstant(7.0);
 
         // ! OBSTACLES
 
@@ -2023,8 +2023,8 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
         // SAVE IMAGE WITHOUT PATH - TEST
 
         cv::Mat test_image;
-        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "training", CV_8UC1, 0.0, 6.0, test_image);
-        cv::applyColorMap(test_image, test_image, cv::COLORMAP_JET);
+        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "training", CV_8U, 0.0, 6.0, test_image);
+        // cv::applyColorMap(test_image, test_image, cv::COLORMAP_JET);
 
         std::string test_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test/";
         std::string date = getCurrentDateTime();
@@ -2033,7 +2033,7 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
         test_filename.append(std::to_string(start[2]));
         test_filename.append("_");
         test_filename.append(std::to_string(goal[2]));
-        test_filename.append(".jpeg");
+        test_filename.append(".png");
 
         cv::imwrite(test_filename, test_image);
 
@@ -2066,32 +2066,33 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
         xy_grid_map.at("training", goal_index) = 3.0;
 
         cv::Mat train_image;
-        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "training", CV_8UC1, 0.0, 6.0, train_image);
-        cv::applyColorMap(train_image, train_image, cv::COLORMAP_JET);
+        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "training", CV_8U, 0.0, 6.0, train_image);
+        // cv::applyColorMap(train_iemage, train_image, cv::COLORMAP_JET);
 
-        std::string train_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/";
+        std::string train_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/path/";
         train_filename.append(date);
         train_filename.append("_");
         train_filename.append(std::to_string(start[2]));
         train_filename.append("_");
         train_filename.append(std::to_string(goal[2]));
-        train_filename.append(".jpeg");
+        train_filename.append(".png");
 
         cv::imwrite(train_filename, train_image);
 
         // SAVE YAW GRIDMAP
 
         cv::Mat train_yaw_image;
-        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(yaw_grid_map, "training", CV_8UC1, 0.0, 2 * M_PI, train_yaw_image);
+        grid_map::GridMapCvConverter::toImage<unsigned char, 1>(yaw_grid_map, "training", CV_8U, 0, 8, train_yaw_image);
         // cv::applyColorMap(train_yaw_image, train_yaw_image, cv::COLORMAP_JET);
 
-        std::string train_yaw_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/";
+        std::string train_yaw_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation/";
         train_yaw_filename.append(date);
         train_yaw_filename.append("_");
         train_yaw_filename.append(std::to_string(start[2]));
         train_yaw_filename.append("_");
         train_yaw_filename.append(std::to_string(goal[2]));
-        train_yaw_filename.append("yaw.jpeg");
+        train_yaw_filename.append("yaw");
+        train_yaw_filename.append(".png");
 
         cv::imwrite(train_yaw_filename, train_yaw_image);
     }
