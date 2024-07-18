@@ -811,13 +811,15 @@ void OnlinePlannFramework::planWithSimpleSetup()
     // goal_available_ = true;
     while (rclcpp::ok())
     {
-        if (goal_available_)
-            RCLCPP_INFO(this->get_logger(), "goal available");
-        std_msgs::msg::Bool stop_motion;
-        stop_motion.data = true;
-        stop_motion_pub_->publish(stop_motion);
-        OnlinePlannFramework::planningTimerCallback();
         rclcpp::spin_some(this->get_node_base_interface());
+        if (goal_available_)
+        {
+            RCLCPP_INFO(this->get_logger(), "goal available");
+            std_msgs::msg::Bool stop_motion;
+            stop_motion.data = true;
+            stop_motion_pub_->publish(stop_motion);
+            OnlinePlannFramework::planningTimerCallback();
+        }
         loop_rate.sleep();
     }
 }
@@ -2022,7 +2024,7 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
 
         cv::Mat test_image;
         grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "training", CV_8UC1, 0.0, 6.0, test_image);
-        // cv::applyColorMap(test_image, test_image, cv::COLORMAP_JET);
+        cv::applyColorMap(test_image, test_image, cv::COLORMAP_JET);
 
         std::string test_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test/";
         std::string date = getCurrentDateTime();
@@ -2065,7 +2067,7 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
 
         cv::Mat train_image;
         grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "training", CV_8UC1, 0.0, 6.0, train_image);
-        // cv::applyColorMap(train_image, train_image, cv::COLORMAP_JET);
+        cv::applyColorMap(train_image, train_image, cv::COLORMAP_JET);
 
         std::string train_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/";
         train_filename.append(date);
