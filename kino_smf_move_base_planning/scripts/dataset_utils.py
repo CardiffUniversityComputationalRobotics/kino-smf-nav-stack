@@ -1,6 +1,9 @@
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
+import cv2
+import numpy as np
+import sys
 
 
 # Define a custom dataset
@@ -25,10 +28,22 @@ class CustomDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        image = Image.open(self.image_paths[idx])
+        image = cv2.imread(self.image_paths[idx], cv2.IMREAD_GRAYSCALE)
+        image = image.astype(np.float32)
+        image = (image / 255.0) * 6.0
+        image = np.rint(image)
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(image)
+        # cv2.imwrite("input_image.png", image * 20)
+
+        image = Image.fromarray(image)
+
         pdf_image = Image.fromarray(self.pdf_maps[idx])
+
         if self.transform:
             image = self.transform(image)
+            zero_channels = torch.zeros(2, image.size(1), image.size(2))
+            image = torch.cat((image, zero_channels), dim=0)
             pdf_image = self.transform(pdf_image)
 
         robot_size = torch.tensor([self.robot_size[idx]], dtype=torch.float32)
