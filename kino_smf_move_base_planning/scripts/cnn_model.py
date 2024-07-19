@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
 
+
 # Define ASPP module
 class ASPP(nn.Module):
     def __init__(self, in_channels, out_channels, atrous_rates):
@@ -145,7 +146,7 @@ class CustomCNN(nn.Module):
         )
 
         # Ensure the final output has 1 channel
-        self.final_conv = nn.Conv2d(256, 1, kernel_size=3, padding=1)
+        self.final_conv = nn.Conv2d(256, 2, kernel_size=3, padding=1)
 
     def forward(self, image, robot_size, start_orientation, goal_orientation):
         # Combine individual attributes into a single tensor
@@ -195,4 +196,4 @@ class CustomCNN(nn.Module):
         # Ensure output size is [batch_size, 1, 128, 128]
         x = F.interpolate(x, size=(128, 128), mode="bilinear", align_corners=False)
 
-        return torch.sigmoid(x)
+        return torch.sigmoid(x)[:, 0, :, :].unsqueeze(1), x[:, 1, :, :].unsqueeze(1)

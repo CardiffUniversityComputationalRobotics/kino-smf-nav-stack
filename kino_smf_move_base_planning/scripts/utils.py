@@ -1,6 +1,7 @@
 import os
 import cv2
 import numpy as np
+import sys
 
 
 def list_files_in_directory(directory):
@@ -105,3 +106,44 @@ def get_pdf_images(directory):
         pdf_maps.append(probability_map)
 
     return pdf_maps
+
+
+def get_yaw_images(directory):
+
+    filenames = list_files_in_directory(directory)
+
+    complete_file_paths = []
+
+    for i in filenames:
+        complete_file_paths.append(directory + "/" + i)
+
+    yaw_maps = []
+
+    for i in complete_file_paths:
+        image = cv2.imread(i, cv2.IMREAD_GRAYSCALE)
+        image = image.astype(np.float32)
+        image = (image / 255.0) * 8.0
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(image)
+
+        yaw_image = np.copy(image)
+
+        for i in range(0, len(image)):
+            for j in range(0, len(image)):
+                if 6.8 < image[i][j] < 7.2:
+                    yaw_image[i, j] = -1.0
+
+        np.set_printoptions(threshold=sys.maxsize)
+        # print(yaw_image)
+
+        # cv2.imwrite("yaw_image.png", yaw_image)
+
+        yaw_image = np.around(yaw_image, decimals=4)
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(probability_map)
+        # cv2.imwrite("pdf_image.png", probability_map * 255)
+        # probability_map = np.clip(probability_map, 0, 1)
+
+        yaw_maps.append(yaw_image)
+
+    return yaw_maps
