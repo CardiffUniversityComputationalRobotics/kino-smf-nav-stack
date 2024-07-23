@@ -196,4 +196,7 @@ class CustomCNN(nn.Module):
         # Ensure output size is [batch_size, 1, 128, 128]
         x = F.interpolate(x, size=(128, 128), mode="bilinear", align_corners=False)
 
-        return torch.sigmoid(x)[:, 0, :, :].unsqueeze(1), x[:, 1, :, :].unsqueeze(1)
+        xy_inference = torch.sigmoid(x[:, 0, :, :].unsqueeze(1))
+        yaw_inference = torch.relu(x[:, 1, :, :].unsqueeze(1))
+
+        return xy_inference, yaw_inference

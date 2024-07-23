@@ -105,6 +105,11 @@ def get_pdf_images(directory):
 
         pdf_maps.append(probability_map)
 
+    # np.set_printoptions(threshold=sys.maxsize)
+    # print(pdf_maps[-1])
+    # cv2.imwrite("pdf_image.png", pdf_maps[-1] * 255)
+    # print(complete_file_paths[-1])
+
     return pdf_maps
 
 
@@ -145,5 +150,10 @@ def get_yaw_images(directory):
         # probability_map = np.clip(probability_map, 0, 1)
 
         yaw_maps.append(yaw_image)
+
+    # np.set_printoptions(threshold=sys.maxsize)
+    # print(yaw_maps[-6])
+    # cv2.imwrite("yaw_image.png", yaw_maps[-6] * 255)
+    # print(complete_file_paths[-6])
 
     return yaw_maps

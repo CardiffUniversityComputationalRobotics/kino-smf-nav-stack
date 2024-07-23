@@ -22,7 +22,7 @@ def train_model(
 
         for (
             inputs,
-            pdf_groundtruth,
+            xy_groundtruth,
             yaw_groundtruth,
             robot_size,
             start_orientations,
@@ -30,14 +30,14 @@ def train_model(
         ) in train_loader:
             (
                 inputs,
-                pdf_groundtruth,
+                xy_groundtruth,
                 yaw_groundtruth,
                 robot_size,
                 start_orientations,
                 goal_orientations,
             ) = (
                 inputs.to(device),
-                pdf_groundtruth.to(device),
+                xy_groundtruth.to(device),
                 yaw_groundtruth.to(device),
                 robot_size.to(device),
                 start_orientations.to(device),
@@ -45,10 +45,10 @@ def train_model(
             )
 
             optimizer.zero_grad()
-            xy_pdf, yaw_inference = model(
+            xy_inference, yaw_inference = model(
                 inputs, robot_size, start_orientations, goal_orientations
             )
-            xy_loss = xy_criterion(xy_pdf, pdf_groundtruth)
+            xy_loss = xy_criterion(xy_inference, xy_groundtruth)
             yaw_loss = yaw_criterion(yaw_inference, yaw_groundtruth)
             total_loss = xy_loss + yaw_loss
             total_loss.backward()
@@ -57,9 +57,9 @@ def train_model(
             epoch_xy_loss += xy_loss.item()
             epoch_yaw_loss += yaw_loss.item()
 
-    print(
-        f"Epoch {epoch+1}/{num_epochs}, Loss1: {epoch_xy_loss/len(train_loader)}, Loss2: {epoch_yaw_loss/len(train_loader)}"
-    )
+        print(
+            f"Epoch {epoch+1}/{num_epochs}, Loss1: {epoch_xy_loss/len(train_loader)}, Loss2: {epoch_yaw_loss/len(train_loader)}"
+        )
 
     print("Training complete")
     return model
@@ -67,9 +67,9 @@ def train_model(
 
 # Hyperparameters and dataset setup
 
-raw_image_path = "/home/sasm/Downloads/dataset_18_07_2024/dataset/test"
-xy_image_path = "/home/sasm/Downloads/dataset_18_07_2024/dataset/train/path"
-yaw_image_path = "/home/sasm/Downloads/dataset_18_07_2024/dataset/train/orientation"
+raw_image_path = "/home/sasm/Downloads/dataset_23_07/dataset/test"
+xy_image_path = "/home/sasm/Downloads/dataset_23_07/dataset/train/path"
+yaw_image_path = "/home/sasm/Downloads/dataset_23_07/dataset/train/orientation"
 
 image_paths, start_orientations, goal_orientations = get_images_and_params(
     raw_image_path
@@ -108,7 +108,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 
 trained_model = train_model(
-    model, train_loader, xy_criterion, yaw_criterion, optimizer, num_epochs=50
+    model, train_loader, xy_criterion, yaw_criterion, optimizer, num_epochs=25
 )
 
 model_path = (
