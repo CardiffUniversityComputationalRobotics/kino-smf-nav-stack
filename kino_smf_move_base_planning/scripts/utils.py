@@ -97,11 +97,15 @@ def get_pdf_images(directory):
                 if 4.2 > image[i][j] > 3.8:
                     probability_map[i, j] = 1.0
 
+        probability_map = probability_map * 5
+
+        probability_map = np.clip(probability_map, 0, 1)
+
         probability_map = np.around(probability_map, decimals=4)
+
         # np.set_printoptions(threshold=sys.maxsize)
         # print(probability_map)
         # cv2.imwrite("pdf_image.png", probability_map * 255)
-        # probability_map = np.clip(probability_map, 0, 1)
 
         pdf_maps.append(probability_map)
 
@@ -138,10 +142,30 @@ def get_yaw_images(directory):
                 if 6.8 < image[i][j] < 7.2:
                     yaw_image[i, j] = -1.0
 
+        # for i in range(0, len(image)):
+        #     for j in range(0, len(image)):
+        #         yaw_image[i, j] += 1.0
+
+        # yaw_image = cv2.GaussianBlur(yaw_image, (0, 0), 2.0)
+
+        # for i in range(0, len(image)):
+        #     for j in range(0, len(image)):
+        #         yaw_image[i, j] -= 1.0
+
+        # for i in range(0, len(image)):
+        #     for j in range(0, len(image)):
+        #         if yaw_image[i, j] < 0.0:
+        #             yaw_image[i, j] = -0.5
+
+        # for i in range(0, len(image)):
+        #     for j in range(0, len(image)):
+        #         if image[i][j] >= 0.0 and image[i][j] < 6.8:
+        #             yaw_image[i, j] = image[i][j]
+
         # np.set_printoptions(threshold=sys.maxsize)
         # print(yaw_image)
 
-        # cv2.imwrite("yaw_image.png", yaw_image)
+        # cv2.imwrite("yaw_image.png", yaw_image * 255)
 
         yaw_image = np.around(yaw_image, decimals=4)
         # np.set_printoptions(threshold=sys.maxsize)

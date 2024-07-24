@@ -1,13 +1,14 @@
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 import numpy as np
 
 from dataset_utils import CustomDatasetXY
 from cnn_model import XYCNN
 
 from utils import get_images_and_params, get_pdf_images
+import sys
 
 torch.cuda.empty_cache()
 
@@ -48,11 +49,50 @@ def train_model(model, train_loader, xy_criterion, optimizer, num_epochs=25):
             optimizer.step()
 
             epoch_xy_loss += xy_loss.item()
+            # np.set_printoptions(threshold=sys.maxsize)
+            # print(xy_groundtruth.detach().cpu().numpy())
 
         print(f"Epoch {epoch+1}/{num_epochs}, Loss1: {epoch_xy_loss/len(train_loader)}")
 
     print("Training complete")
     return model
+
+
+def evaluate_model(model, test_loader, xy_criterion):
+    model.eval()
+    test_loss = 0.0
+
+    with torch.no_grad():
+        for (
+            inputs,
+            xy_groundtruth,
+            robot_size,
+            start_orientations,
+            goal_orientations,
+        ) in test_loader:
+            (
+                inputs,
+                xy_groundtruth,
+                robot_size,
+                start_orientations,
+                goal_orientations,
+            ) = (
+                inputs.to(device),
+                xy_groundtruth.to(device),
+                robot_size.to(device),
+                start_orientations.to(device),
+                goal_orientations.to(device),
+            )
+
+            xy_inference = model(
+                inputs, robot_size, start_orientations, goal_orientations
+            )
+            xy_loss = xy_criterion(xy_inference, xy_groundtruth)
+
+            test_loss += xy_loss.item()
+
+    avg_test_loss = test_loss / len(test_loader)
+    print(f"Test Loss: {avg_test_loss}")
 
 
 # Hyperparameters and dataset setup
@@ -82,8 +122,13 @@ dataset = CustomDatasetXY(
     transform,
 )
 
-train_loader = DataLoader(dataset, batch_size=16, shuffle=True)
+# Split the dataset into training and testing
+train_size = int(0.8 * len(dataset))
+test_size = len(dataset) - train_size
+train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
+train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
 # Training setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -94,9 +139,11 @@ xy_criterion = nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 
-trained_model = train_model(model, train_loader, xy_criterion, optimizer, num_epochs=25)
+trained_model = train_model(model, train_loader, xy_criterion, optimizer, num_epochs=20)
 
 model_path = (
     "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_xy.pth"
 )
 torch.save(model.state_dict(), model_path)
+
+evaluate_model(trained_model, test_loader, xy_criterion)
