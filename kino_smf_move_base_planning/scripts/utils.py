@@ -138,7 +138,7 @@ def get_yaw_images(directory):
                 if 6.8 < image[i][j] < 7.2:
                     yaw_image[i, j] = -1.0
 
-        np.set_printoptions(threshold=sys.maxsize)
+        # np.set_printoptions(threshold=sys.maxsize)
         # print(yaw_image)
 
         # cv2.imwrite("yaw_image.png", yaw_image)

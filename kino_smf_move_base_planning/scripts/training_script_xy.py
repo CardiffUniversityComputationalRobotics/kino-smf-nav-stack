@@ -71,7 +71,7 @@ robot_sizes = np.array([0.35] * len(image_paths)).astype(np.float32)
 
 pdf_maps = get_pdf_images(xy_image_path)
 
-transform = transforms.Compose([transforms.Resize((128, 128)), transforms.ToTensor()])
+transform = transforms.Compose([transforms.Resize((100, 100)), transforms.ToTensor()])
 
 dataset = CustomDatasetXY(
     image_paths,

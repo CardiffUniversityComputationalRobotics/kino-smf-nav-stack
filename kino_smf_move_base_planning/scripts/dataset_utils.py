@@ -95,6 +95,13 @@ class CustomDatasetYaw(Dataset):
         image = Image.fromarray(image)
 
         yaw_image = Image.fromarray(self.yaw_maps[idx])
+        # yaw_image = self.yaw_maps[idx]
+
+        # print("+++++++++++++++++++++++++++++++++++++++")
+        # print("YAW MAPS WITHOUT TRANSFORM")
+        # print("+++++++++++++++++++++++++++++++++++++++")
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(np.array(yaw_image))
 
         if self.transform:
             image = self.transform(image)
@@ -102,6 +109,12 @@ class CustomDatasetYaw(Dataset):
             image = torch.cat((image, zero_channels), dim=0)
 
             yaw_image = self.transform(yaw_image)
+
+        # print("+++++++++++++++++++++++++++++++++++++++")
+        # print("YAW MAPS WITH TRANSFORM")
+        # print("+++++++++++++++++++++++++++++++++++++++")
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(yaw_image.detach().cpu().numpy())
 
         robot_size = torch.tensor([self.robot_size[idx]], dtype=torch.float32)
         start_orientation = torch.tensor(

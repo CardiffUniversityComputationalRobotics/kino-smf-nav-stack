@@ -8,6 +8,7 @@ from dataset_utils import CustomDatasetYaw
 from cnn_model import YawCNN
 
 from utils import get_images_and_params, get_yaw_images
+import sys
 
 torch.cuda.empty_cache()
 
@@ -42,12 +43,14 @@ def train_model(model, train_loader, yaw_criterion, optimizer, num_epochs=25):
             yaw_inference = model(
                 inputs, robot_size, start_orientations, goal_orientations
             )
+
             yaw_loss = yaw_criterion(yaw_inference, yaw_groundtruth)
             yaw_loss.backward()
             optimizer.step()
 
             epoch_yaw_loss += yaw_loss.item()
-
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(yaw_groundtruth.detach().cpu().numpy())
         print(
             f"Epoch {epoch+1}/{num_epochs}, Loss1: {epoch_yaw_loss/len(train_loader)}"
         )
@@ -72,7 +75,7 @@ robot_sizes = np.array([0.35] * len(image_paths)).astype(np.float32)
 
 yaw_maps = get_yaw_images(yaw_image_path)
 
-transform = transforms.Compose([transforms.Resize((128, 128)), transforms.ToTensor()])
+transform = transforms.Compose([transforms.Resize((100, 100)), transforms.ToTensor()])
 
 dataset = CustomDatasetYaw(
     image_paths,
