@@ -4,25 +4,21 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import numpy as np
 
-from dataset_utils import CustomDatasetXYYaw
-from cnn_model import CustomCNN
+from dataset_utils import CustomDatasetYaw
+from cnn_model import YawCNN
 
-from utils import get_images_and_params, get_pdf_images, get_yaw_images
+from utils import get_images_and_params, get_yaw_images
 
 torch.cuda.empty_cache()
 
 
-def train_model(
-    model, train_loader, xy_criterion, yaw_criterion, optimizer, num_epochs=25
-):
+def train_model(model, train_loader, yaw_criterion, optimizer, num_epochs=25):
     model.train()
     for epoch in range(num_epochs):
-        epoch_xy_loss = 0.0
         epoch_yaw_loss = 0.0
 
         for (
             inputs,
-            xy_groundtruth,
             yaw_groundtruth,
             robot_size,
             start_orientations,
@@ -30,14 +26,12 @@ def train_model(
         ) in train_loader:
             (
                 inputs,
-                xy_groundtruth,
                 yaw_groundtruth,
                 robot_size,
                 start_orientations,
                 goal_orientations,
             ) = (
                 inputs.to(device),
-                xy_groundtruth.to(device),
                 yaw_groundtruth.to(device),
                 robot_size.to(device),
                 start_orientations.to(device),
@@ -45,20 +39,17 @@ def train_model(
             )
 
             optimizer.zero_grad()
-            xy_inference, yaw_inference = model(
+            yaw_inference = model(
                 inputs, robot_size, start_orientations, goal_orientations
             )
-            xy_loss = xy_criterion(xy_inference, xy_groundtruth)
             yaw_loss = yaw_criterion(yaw_inference, yaw_groundtruth)
-            total_loss = xy_loss + yaw_loss
-            total_loss.backward()
+            yaw_loss.backward()
             optimizer.step()
 
-            epoch_xy_loss += xy_loss.item()
             epoch_yaw_loss += yaw_loss.item()
 
         print(
-            f"Epoch {epoch+1}/{num_epochs}, Loss1: {epoch_xy_loss/len(train_loader)}, Loss2: {epoch_yaw_loss/len(train_loader)}"
+            f"Epoch {epoch+1}/{num_epochs}, Loss1: {epoch_yaw_loss/len(train_loader)}"
         )
 
     print("Training complete")
@@ -79,14 +70,12 @@ start_orientations = np.array(start_orientations).astype(np.float32)
 goal_orientations = np.array(goal_orientations).astype(np.float32)
 robot_sizes = np.array([0.35] * len(image_paths)).astype(np.float32)
 
-pdf_maps = get_pdf_images(xy_image_path)
 yaw_maps = get_yaw_images(yaw_image_path)
 
 transform = transforms.Compose([transforms.Resize((128, 128)), transforms.ToTensor()])
 
-dataset = CustomDatasetXYYaw(
+dataset = CustomDatasetYaw(
     image_paths,
-    pdf_maps,
     yaw_maps,
     robot_sizes,
     start_orientations,
@@ -99,19 +88,18 @@ train_loader = DataLoader(dataset, batch_size=16, shuffle=True)
 
 # Training setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = CustomCNN().to(device)
+model = YawCNN().to(device)
 
-xy_criterion = nn.BCELoss()
 yaw_criterion = nn.MSELoss()
 
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 
 trained_model = train_model(
-    model, train_loader, xy_criterion, yaw_criterion, optimizer, num_epochs=25
+    model, train_loader, yaw_criterion, optimizer, num_epochs=25
 )
 
 model_path = (
-    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model.pth"
+    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_yaw.pth"
 )
 torch.save(model.state_dict(), model_path)
