@@ -54,6 +54,9 @@ def train_model(model, train_loader, xy_criterion, optimizer, num_epochs=25):
 
         print(f"Epoch {epoch+1}/{num_epochs}, Loss1: {epoch_xy_loss/len(train_loader)}")
 
+        if epoch_xy_loss / len(train_loader) < 0.024:
+            return model
+
     print("Training complete")
     return model
 
@@ -97,9 +100,9 @@ def evaluate_model(model, test_loader, xy_criterion):
 
 # Hyperparameters and dataset setup
 
-raw_image_path = "/home/sasm/Downloads/dataset_23_07/dataset/test"
-xy_image_path = "/home/sasm/Downloads/dataset_23_07/dataset/train/path"
-yaw_image_path = "/home/sasm/Downloads/dataset_23_07/dataset/train/orientation"
+raw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
+xy_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/path"
+yaw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/train/orientation"
 
 image_paths, start_orientations, goal_orientations = get_images_and_params(
     raw_image_path
@@ -127,8 +130,8 @@ train_size = int(0.8 * len(dataset))
 test_size = len(dataset) - train_size
 train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
-train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
 # Training setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -139,7 +142,7 @@ xy_criterion = nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 
-trained_model = train_model(model, train_loader, xy_criterion, optimizer, num_epochs=20)
+trained_model = train_model(model, train_loader, xy_criterion, optimizer, num_epochs=25)
 
 model_path = (
     "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_xy.pth"

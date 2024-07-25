@@ -68,10 +68,10 @@ def preprocess_attributes(robot_size, start_orientation, goal_orientation):
 
 # Example file path and attributes
 # image_path = "/home/sasm/test_dataset/test/2024-07-19_18-33-45_-2.191234_-2.425865.png"
-image_path = "/home/sasm/Downloads/dataset_23_07/dataset/test/2024-07-19_23-41-45_0.002074_0.732240.png"
+image_path = "/home/sasm/Downloads/dataset_23_07/dataset/test/2024-07-23_07-59-40_-0.270260_0.854287.png"
 robot_size = 0.35
-start_orientation = 0.002
-goal_orientation = 0.732
+start_orientation = -0.2702
+goal_orientation = 0.8542
 
 # Preprocess inputs
 image = preprocess_image(image_path).to(device)
@@ -93,7 +93,7 @@ xy_pdf_image = xy_pdf.squeeze().cpu().numpy()
 
 for i in range(0, len(xy_pdf_image)):
     for j in range(0, len(xy_pdf_image)):
-        if xy_pdf_image[i, j] < 0.05:
+        if xy_pdf_image[i, j] < 0.4:
             xy_pdf_image[i, j] = 0.0
 
 np.set_printoptions(threshold=sys.maxsize)
