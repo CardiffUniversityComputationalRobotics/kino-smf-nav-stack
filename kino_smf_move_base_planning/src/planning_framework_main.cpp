@@ -2045,6 +2045,16 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
 
         ob::StateSpacePtr space = simple_setup_local_->getStateSpace();
 
+        std::string txt_yaw_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation/txt/";
+        txt_yaw_filename.append(date);
+        txt_yaw_filename.append("_");
+        txt_yaw_filename.append(std::to_string(wrapAngle(start[2])));
+        txt_yaw_filename.append("_");
+        txt_yaw_filename.append(std::to_string(wrapAngle(goal[2])));
+        txt_yaw_filename.append(".txt");
+
+        std::ofstream outfile(txt_yaw_filename);
+
         for (int i = 0; i < path_states.size(); i++)
         {
             ob::State *s = space->allocState();
@@ -2057,9 +2067,22 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
             xy_grid_map.at("training", index) = 4.0;
 
             // YAW GRIDMAP
+            double yaw_angle = wrapAngle(path_states[i]->as<ob::SE2StateSpace::StateType>()->getYaw());
+            yaw_grid_map.at("training", index) = yaw_angle;
 
-            yaw_grid_map.at("training", index) = wrapAngle(path_states[i]->as<ob::SE2StateSpace::StateType>()->getYaw());
+            // TEXT ORIENTATION AND POSITION
+
+            std::string data;
+            data.append(std::to_string(pos[0]));
+            data.append(",");
+            data.append(std::to_string(pos[1]));
+            data.append(",");
+            data.append(std::to_string(yaw_angle));
+
+            outfile << data << "\n";
         }
+
+        outfile.close();
 
         // ! START
         xy_grid_map.at("training", start_index) = 2.0;
