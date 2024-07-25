@@ -106,6 +106,7 @@ class AtrousResNet50(nn.Module):
 
         return c1, c4
 
+
 class ResNet50Encoder(nn.Module):
     def __init__(
         self,
@@ -157,8 +158,14 @@ class FullyConnectedNN(nn.Module):
         self.fc2 = nn.Linear(3, 64)
 
     def forward(self, attributes):
-
+        # print("=============")
+        # print(attributes.size())
+        # print(attributes)
         attributes = attributes.view(attributes.size(0), -1)
+        # print(attributes)
+        # print(attributes.size())
+        # print("++++++++++==")
+
         fla = self.fc1(attributes)
         fla = torch.relu(fla)
         fla = fla.view(-1, 1, 1, 32)  # Reshape to (batch_size, 1, 1, 32)
@@ -176,22 +183,23 @@ class XYCNN(nn.Module):
         super(XYCNN, self).__init__()
 
         # Convolutions for image
-        self.init_conv = ResNet50Encoder()
+        # self.init_conv = ResNet50Encoder()
+        self.init_conv = AtrousResNet50()
 
         # Fully connected layers for double values
         self.fcn = FullyConnectedNN()
 
         # Further convolutional layers
         self.conv = nn.Conv2d(
-            288, 128, kernel_size=3, padding=1
+            288, 256 + 32, kernel_size=3, padding=1
         )  # Adjusted in_channels
-        self.aspp = ASPP(2112, 128, [3, 6, 12])  # Adjusted in_channels
-        self.upsample = nn.Upsample(
-            scale_factor=2, mode="bilinear", align_corners=False
-        )
+        self.aspp = ASPP(2112, 256 + 64, [3, 6, 12])  # Adjusted in_channels
+        self.upsample = nn.Upsample(size=(25, 25), mode="bilinear", align_corners=False)
 
         # Ensure the final output has 1 channel
-        self.final_conv = nn.Conv2d(256, 1, kernel_size=3, padding=1)
+        self.final_conv = nn.ConvTranspose2d(
+            in_channels=608, out_channels=1, kernel_size=6, stride=4, padding=1
+        )
 
     def forward(self, image, robot_size, start_orientation, goal_orientation):
         # Combine individual attributes into a single tensor
@@ -205,6 +213,8 @@ class XYCNN(nn.Module):
         # print(image.size())
         # input image convolutions
         c1, c4 = self.init_conv(image)
+
+        # print("==========")
         # print(c1.size())
         # print(c4.size())
 
@@ -212,6 +222,10 @@ class XYCNN(nn.Module):
         fla = fla.expand(
             -1, c1.size(2), c1.size(3), -1
         )  # Adjust fla to match spatial dimensions
+
+        # print(fla.size())
+        # print(fla)
+
         low_concat = torch.cat(
             (c1, fla.permute(0, 3, 1, 2)), dim=1
         )  # Concatenate along channel dimension
@@ -223,28 +237,36 @@ class XYCNN(nn.Module):
             (c4, fha.permute(0, 3, 1, 2)), dim=1
         )  # Concatenate along channel dimension
 
+        # print(fla.permute(0, 3, 1, 2).size())
+        # print(fha.permute(0, 3, 1, 2).size())
+
+        # print(low_concat.size())
+        # print(high_concat.size())
+
         # Low res section second convolution
         fcl = F.relu(self.conv(low_concat))
 
         # ASPP and upsampling of high res
         fh = self.aspp(high_concat)
-        # print(fh.size())
 
         fh = self.upsample(fh)
 
+        # print(fcl.size())
+        # print(fh.size())
+
         # Ensure dimensions match for concatenation
-        fcl_resized = F.interpolate(
-            fcl, size=(fh.size(2), fh.size(3)), mode="bilinear", align_corners=False
-        )
+        # fcl_resized = F.interpolate(
+        #     fcl, size=(fh.size(2), fh.size(3)), mode="bilinear", align_corners=False
+        # )
 
         # Final concatenation
-        final_concat = torch.cat((fcl_resized, fh), dim=1)
-
+        final_concat = torch.cat((fcl, fh), dim=1)
+        # print(final_concat.size())
         # Apply final convolution to get the output with the desired number of channels
         x = self.final_conv(final_concat)
-
+        # print(x.size())
         # Ensure output size is [batch_size, 1, 128, 128]
-        x = F.interpolate(x, size=(100, 100), mode="bilinear", align_corners=False)
+        # x = F.interpolate(x, size=(100, 100), mode="bilinear", align_corners=False)
 
         xy_inference = torch.sigmoid(x)
 
@@ -257,22 +279,23 @@ class YawCNN(nn.Module):
         super(YawCNN, self).__init__()
 
         # Convolutions for image
-        self.init_conv = AtrousResNet50(pretrained=True)
+        # self.init_conv = ResNet50Encoder()
+        self.init_conv = AtrousResNet50()
 
         # Fully connected layers for double values
         self.fcn = FullyConnectedNN()
 
         # Further convolutional layers
         self.conv = nn.Conv2d(
-            288, 128, kernel_size=3, padding=1
+            288, 256 + 32, kernel_size=3, padding=1
         )  # Adjusted in_channels
-        self.aspp = ASPP(2112, 128, [3, 6, 12])  # Adjusted in_channels
-        self.upsample = nn.Upsample(
-            scale_factor=2, mode="bilinear", align_corners=False
-        )
+        self.aspp = ASPP(2112, 256 + 64, [3, 6, 12])  # Adjusted in_channels
+        self.upsample = nn.Upsample(size=(25, 25), mode="bilinear", align_corners=False)
 
         # Ensure the final output has 1 channel
-        self.final_conv = nn.Conv2d(256, 1, kernel_size=3, padding=1)
+        self.final_conv = nn.ConvTranspose2d(
+            in_channels=608, out_channels=1, kernel_size=6, stride=4, padding=1
+        )
 
     def forward(self, image, robot_size, start_orientation, goal_orientation):
         # Combine individual attributes into a single tensor
@@ -283,13 +306,22 @@ class YawCNN(nn.Module):
         # Pass attributes through the fully connected network
         fla, fha = self.fcn(path_attributes)
 
+        # print(image.size())
         # input image convolutions
         c1, c4 = self.init_conv(image)
+
+        # print("==========")
+        # print(c1.size())
+        # print(c4.size())
 
         # Concatenations
         fla = fla.expand(
             -1, c1.size(2), c1.size(3), -1
         )  # Adjust fla to match spatial dimensions
+
+        # print(fla.size())
+        # print(fla)
+
         low_concat = torch.cat(
             (c1, fla.permute(0, 3, 1, 2)), dim=1
         )  # Concatenate along channel dimension
@@ -301,26 +333,36 @@ class YawCNN(nn.Module):
             (c4, fha.permute(0, 3, 1, 2)), dim=1
         )  # Concatenate along channel dimension
 
+        # print(fla.permute(0, 3, 1, 2).size())
+        # print(fha.permute(0, 3, 1, 2).size())
+
+        # print(low_concat.size())
+        # print(high_concat.size())
+
         # Low res section second convolution
         fcl = F.relu(self.conv(low_concat))
 
         # ASPP and upsampling of high res
         fh = self.aspp(high_concat)
+
         fh = self.upsample(fh)
 
+        # print(fcl.size())
+        # print(fh.size())
+
         # Ensure dimensions match for concatenation
-        fcl_resized = F.interpolate(
-            fcl, size=(fh.size(2), fh.size(3)), mode="bilinear", align_corners=False
-        )
+        # fcl_resized = F.interpolate(
+        #     fcl, size=(fh.size(2), fh.size(3)), mode="bilinear", align_corners=False
+        # )
 
         # Final concatenation
-        final_concat = torch.cat((fcl_resized, fh), dim=1)
-
+        final_concat = torch.cat((fcl, fh), dim=1)
+        # print(final_concat.size())
         # Apply final convolution to get the output with the desired number of channels
         x = self.final_conv(final_concat)
-
+        # print(x.size())
         # Ensure output size is [batch_size, 1, 128, 128]
-        x = F.interpolate(x, size=(100, 100), mode="bilinear", align_corners=False)
+        # x = F.interpolate(x, size=(100, 100), mode="bilinear", align_corners=False)
 
         yaw_inference = F.elu(x)
 
