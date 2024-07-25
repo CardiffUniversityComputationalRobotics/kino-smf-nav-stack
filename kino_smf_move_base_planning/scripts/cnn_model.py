@@ -364,6 +364,6 @@ class YawCNN(nn.Module):
         # Ensure output size is [batch_size, 1, 128, 128]
         # x = F.interpolate(x, size=(100, 100), mode="bilinear", align_corners=False)
 
-        yaw_inference = F.elu(x)
+        yaw_inference = F.relu(x)
 
         return yaw_inference

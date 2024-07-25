@@ -8,13 +8,13 @@ from PIL import Image
 import numpy as np
 import os
 import cv2
-from cnn_model import CustomCNN
+from cnn_model import YawCNN
 import sys
 
 # Initialize the model
-loaded_model = CustomCNN()
+loaded_model = YawCNN()
 model_path = (
-    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model.pth"
+    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_yaw.pth"
 )
 
 # Load the state dictionary into the model
@@ -41,7 +41,7 @@ def preprocess_image(image_path):
     image = Image.fromarray(image)
 
     transform = transforms.Compose(
-        [transforms.Resize((128, 128)), transforms.ToTensor()]
+        [transforms.Resize((100, 100)), transforms.ToTensor()]
     )
 
     image = transform(image)
@@ -68,10 +68,10 @@ def preprocess_attributes(robot_size, start_orientation, goal_orientation):
 
 # Example file path and attributes
 # image_path = "/home/sasm/test_dataset/test/2024-07-19_18-33-45_-2.191234_-2.425865.png"
-image_path = "/home/sasm/Downloads/dataset_23_07/dataset/test/2024-07-19_20-39-11_0.714817_-0.818454.png"
+image_path = "/home/sasm/Downloads/dataset_23_07/dataset/test/2024-07-19_19-24-20_-0.010632_0.818877.png"
 robot_size = 0.35
-start_orientation = 0.71
-goal_orientation = -0.81
+start_orientation = -0.01
+goal_orientation = 0.81
 
 # Preprocess inputs
 image = preprocess_image(image_path).to(device)
@@ -84,26 +84,8 @@ goal_orientation = goal_orientation.to(device)
 
 # Make predictions
 with torch.no_grad():
-    xy_pdf, yaw_inference = loaded_model(
-        image, robot_size, start_orientation, goal_orientation
-    )
+    yaw_inference = loaded_model(image, robot_size, start_orientation, goal_orientation)
 
-# Output shape should be [1, 1, 128, 128] for a single input
-print("Output shape:", xy_pdf.shape)
-
-xy_pdf_image = xy_pdf.squeeze().cpu().numpy()
-
-# If the output tensor values are in the range [0, 1], scale to [0, 255]
-xy_pdf_image = (xy_pdf_image * 255).astype(np.uint8)
-
-# Convert the numpy array to a PIL image
-xy_pil_image = Image.fromarray(xy_pdf_image)
-
-# Save the PIL image
-xy_pdf_image_path = "xy_pdf.png"
-xy_pil_image.save(xy_pdf_image_path)
-
-print(f"Output image saved to {xy_pdf_image_path}")
 
 print("Output shape:", yaw_inference.shape)
 
@@ -112,7 +94,7 @@ yaw_inference_image = yaw_inference.squeeze().cpu().numpy()
 # print(yaw_inference_image)
 
 # If the output tensor values are in the range [0, 1], scale to [0, 255]
-yaw_inference_image = (yaw_inference_image * 255).astype(np.uint8)
+yaw_inference_image = ((yaw_inference_image / 20) * 255).astype(np.uint8)
 
 # Convert the numpy array to a PIL image
 yaw_pil_image = Image.fromarray(yaw_inference_image)

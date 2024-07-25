@@ -117,6 +117,33 @@ def get_pdf_images(directory):
     return pdf_maps
 
 
+def blur_around_cell(array, i, j, blur_radius=3, sigma=1):
+    # Define the size of the region to blur around the cell
+    kernel_size = blur_radius * 2 + 1
+
+    # Define the region of interest (ROI)
+    i_start = max(i - blur_radius, 0)
+    j_start = max(j - blur_radius, 0)
+    i_end = min(i + blur_radius + 1, array.shape[0])
+    j_end = min(j + blur_radius + 1, array.shape[1])
+
+    # Extract the region of interest (ROI)
+    roi = array[i_start:i_end, j_start:j_end]
+
+    # Create the Gaussian kernel
+    gaussian_kernel = cv2.getGaussianKernel(kernel_size, sigma)
+    gaussian_kernel = gaussian_kernel * gaussian_kernel.T  # Create a 2D Gaussian kernel
+
+    # Apply the Gaussian blur to the ROI
+    blurred_roi = cv2.filter2D(roi, -1, gaussian_kernel)
+
+    # Combine the original array with the blurred ROI
+    blurred_array = array.copy()
+    blurred_array[i_start:i_end, j_start:j_end] = blurred_roi
+
+    return blurred_array
+
+
 def get_yaw_images(directory):
 
     filenames = list_files_in_directory(directory)
@@ -140,13 +167,22 @@ def get_yaw_images(directory):
         for i in range(0, len(image)):
             for j in range(0, len(image)):
                 if 6.8 < image[i][j] < 7.2:
-                    yaw_image[i, j] = -1.0
+                    yaw_image[i, j] = 20.0
+
+        # yaw_image = yaw_image * 5
+
+        # for i in range(0, len(yaw_image)):
+        #     for j in range(0, len(yaw_image)):
+        #         if yaw_image[i][j] < 0.0:
+        #             yaw_image[i, j] = 0.0
 
         # for i in range(0, len(image)):
         #     for j in range(0, len(image)):
         #         yaw_image[i, j] += 1.0
 
-        # yaw_image = cv2.GaussianBlur(yaw_image, (0, 0), 2.0)
+        # yaw_image = cv2.GaussianBlur(yaw_image, (0, 0), 1.0)
+
+        # yaw_image = yaw_image / 5
 
         # for i in range(0, len(image)):
         #     for j in range(0, len(image)):
@@ -161,11 +197,19 @@ def get_yaw_images(directory):
         #     for j in range(0, len(image)):
         #         if image[i][j] >= 0.0 and image[i][j] < 6.8:
         #             yaw_image[i, j] = image[i][j]
+        #             yaw_image = blur_around_cell(
+        #                 yaw_image, i, j, blur_radius=2, sigma=1
+        #             )
+
+        for i in range(0, len(image)):
+            for j in range(0, len(image)):
+                if image[i][j] >= 0.0 and image[i][j] < 6.5:
+                    yaw_image[i, j] = image[i][j]
 
         # np.set_printoptions(threshold=sys.maxsize)
         # print(yaw_image)
 
-        # cv2.imwrite("yaw_image.png", yaw_image * 255)
+        # cv2.imwrite("yaw_image.png", (yaw_image / 7) * 255)
 
         yaw_image = np.around(yaw_image, decimals=4)
         # np.set_printoptions(threshold=sys.maxsize)

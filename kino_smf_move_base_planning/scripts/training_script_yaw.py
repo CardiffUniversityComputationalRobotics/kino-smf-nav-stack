@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 import numpy as np
 
 from dataset_utils import CustomDatasetYaw
@@ -59,11 +59,48 @@ def train_model(model, train_loader, yaw_criterion, optimizer, num_epochs=25):
     return model
 
 
+def evaluate_model(model, test_loader, yaw_criterion):
+    model.eval()
+    test_loss = 0.0
+
+    with torch.no_grad():
+        for (
+            inputs,
+            yaw_groundtruth,
+            robot_size,
+            start_orientations,
+            goal_orientations,
+        ) in test_loader:
+            (
+                inputs,
+                yaw_groundtruth,
+                robot_size,
+                start_orientations,
+                goal_orientations,
+            ) = (
+                inputs.to(device),
+                yaw_groundtruth.to(device),
+                robot_size.to(device),
+                start_orientations.to(device),
+                goal_orientations.to(device),
+            )
+
+            yaw_inference = model(
+                inputs, robot_size, start_orientations, goal_orientations
+            )
+            yaw_loss = yaw_criterion(yaw_inference, yaw_groundtruth)
+
+            test_loss += yaw_loss.item()
+
+    avg_test_loss = test_loss / len(test_loader)
+    print(f"Test Loss: {avg_test_loss}")
+
+
 # Hyperparameters and dataset setup
 
-raw_image_path = "/home/sasm/Downloads/dataset_23_07/dataset/test"
-xy_image_path = "/home/sasm/Downloads/dataset_23_07/dataset/train/path"
-yaw_image_path = "/home/sasm/Downloads/dataset_23_07/dataset/train/orientation"
+raw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
+xy_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/path"
+yaw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation"
 
 image_paths, start_orientations, goal_orientations = get_images_and_params(
     raw_image_path
@@ -86,7 +123,13 @@ dataset = CustomDatasetYaw(
     transform,
 )
 
-train_loader = DataLoader(dataset, batch_size=16, shuffle=True)
+# Split the dataset into training and testing
+train_size = int(0.8 * len(dataset))
+test_size = len(dataset) - train_size
+train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
 
 # Training setup
@@ -99,10 +142,12 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 
 trained_model = train_model(
-    model, train_loader, yaw_criterion, optimizer, num_epochs=25
+    model, train_loader, yaw_criterion, optimizer, num_epochs=100
 )
 
 model_path = (
     "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_yaw.pth"
 )
 torch.save(model.state_dict(), model_path)
+
+evaluate_model(trained_model, test_loader, yaw_criterion)
