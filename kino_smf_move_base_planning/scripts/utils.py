@@ -39,6 +39,51 @@ def get_images_and_params(directory):
     return complete_file_paths, start_orientation, goal_orientation
 
 
+def get_images_yaw_and_params(map_directory, orientation_directory):
+
+    filenames = list_files_in_directory(map_directory)
+
+    complete_file_paths = []
+    yaw_groundtruths = []
+    start_orientations = []
+    goal_orientations = []
+    x_poses = []
+    y_poses = []
+
+    for i in filenames:
+
+        data = []
+
+        with open(orientation_directory + "/" + i[:-4] + ".txt", "r") as file:
+            for line in file:
+                # Strip any leading/trailing whitespace and split by comma
+                values = line.strip().split(",")
+                # Convert values to float if needed, otherwise keep as strings
+                values = [
+                    float(value) if value.replace(".", "", 1).isdigit() else value
+                    for value in values
+                ]
+                data.append(values)
+
+        for path_data in data:
+            complete_file_paths.append(map_directory + "/" + i)
+            split_name = i.split("_")
+            start_orientations.append(float(round(float(split_name[2]), 3)))
+            goal_orientations.append(float(round(float(split_name[-1][:-5]), 3)))
+            x_poses.append(path_data[0])
+            y_poses.append(path_data[1])
+            yaw_groundtruths.append(path_data[2])
+
+    return (
+        complete_file_paths,
+        yaw_groundtruths,
+        start_orientations,
+        goal_orientations,
+        x_poses,
+        y_poses,
+    )
+
+
 def create_probability_map(image_size, path_points, sigma=1.0):
     """
     Creates a probability map given a list of path points.

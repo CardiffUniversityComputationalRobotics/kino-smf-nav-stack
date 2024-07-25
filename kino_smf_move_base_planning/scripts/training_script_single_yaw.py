@@ -4,10 +4,10 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, random_split
 import numpy as np
 
-from dataset_utils import CustomDatasetYaw
-from cnn_model import YawCNN
+from dataset_utils import CustomDatasetSingleYaw
+from cnn_model import SingleYawCNN
 
-from utils import get_images_and_params, get_yaw_images
+from utils import get_images_yaw_and_params
 import sys
 
 torch.cuda.empty_cache()
@@ -24,6 +24,8 @@ def train_model(model, train_loader, yaw_criterion, optimizer, num_epochs=25):
             robot_size,
             start_orientations,
             goal_orientations,
+            x_pose,
+            y_pose,
         ) in train_loader:
             (
                 inputs,
@@ -31,17 +33,26 @@ def train_model(model, train_loader, yaw_criterion, optimizer, num_epochs=25):
                 robot_size,
                 start_orientations,
                 goal_orientations,
+                x_pose,
+                y_pose,
             ) = (
                 inputs.to(device),
                 yaw_groundtruth.to(device),
                 robot_size.to(device),
                 start_orientations.to(device),
                 goal_orientations.to(device),
+                x_pose.to(device),
+                y_pose.to(device),
             )
 
             optimizer.zero_grad()
             yaw_inference = model(
-                inputs, robot_size, start_orientations, goal_orientations
+                inputs,
+                robot_size,
+                start_orientations,
+                goal_orientations,
+                x_pose,
+                y_pose,
             )
 
             yaw_loss = yaw_criterion(yaw_inference, yaw_groundtruth)
@@ -70,6 +81,8 @@ def evaluate_model(model, test_loader, yaw_criterion):
             robot_size,
             start_orientations,
             goal_orientations,
+            x_pose,
+            y_pose,
         ) in test_loader:
             (
                 inputs,
@@ -77,16 +90,25 @@ def evaluate_model(model, test_loader, yaw_criterion):
                 robot_size,
                 start_orientations,
                 goal_orientations,
+                x_pose,
+                y_pose,
             ) = (
                 inputs.to(device),
                 yaw_groundtruth.to(device),
                 robot_size.to(device),
                 start_orientations.to(device),
                 goal_orientations.to(device),
+                x_pose.to(device),
+                y_pose.to(device),
             )
 
             yaw_inference = model(
-                inputs, robot_size, start_orientations, goal_orientations
+                inputs,
+                robot_size,
+                start_orientations,
+                goal_orientations,
+                x_pose,
+                y_pose,
             )
             yaw_loss = yaw_criterion(yaw_inference, yaw_groundtruth)
 
@@ -99,27 +121,36 @@ def evaluate_model(model, test_loader, yaw_criterion):
 # Hyperparameters and dataset setup
 
 raw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
-xy_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/path"
-yaw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation"
+yaw_txt_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation/txt"
 
-image_paths, start_orientations, goal_orientations = get_images_and_params(
-    raw_image_path
-)
+(
+    image_paths,
+    yaw_groundtruths,
+    start_orientations,
+    goal_orientations,
+    x_poses,
+    y_poses,
+) = get_images_yaw_and_params(raw_image_path, yaw_txt_path)
 
 start_orientations = np.array(start_orientations).astype(np.float32)
 goal_orientations = np.array(goal_orientations).astype(np.float32)
+x_poses = np.array(x_poses).astype(np.float32)
+y_poses = np.array(y_poses).astype(np.float32)
+
 robot_sizes = np.array([0.35] * len(image_paths)).astype(np.float32)
 
-yaw_maps = get_yaw_images(yaw_image_path)
+yaw_groundtruths = np.array(yaw_groundtruths).astype(np.float32)
 
 transform = transforms.Compose([transforms.Resize((100, 100)), transforms.ToTensor()])
 
-dataset = CustomDatasetYaw(
+dataset = CustomDatasetSingleYaw(
     image_paths,
-    yaw_maps,
+    yaw_groundtruths,
     robot_sizes,
     start_orientations,
     goal_orientations,
+    x_poses,
+    y_poses,
     transform,
 )
 
@@ -134,7 +165,7 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
 # Training setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = YawCNN().to(device)
+model = SingleYawCNN().to(device)
 
 yaw_criterion = nn.MSELoss()
 

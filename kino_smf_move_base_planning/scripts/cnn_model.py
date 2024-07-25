@@ -172,6 +172,27 @@ class FullyConnectedNN(nn.Module):
         return fla, fha
 
 
+class SingleFullyConnectedNN(nn.Module):
+    def __init__(self):
+        super(SingleFullyConnectedNN, self).__init__()
+        self.fc1 = nn.Linear(5, 32)  # Assuming input attributes are of size 3
+        self.fc2 = nn.Linear(5, 64)
+
+    def forward(self, attributes):
+
+        attributes = attributes.view(attributes.size(0), -1)
+
+        fla = self.fc1(attributes)
+        fla = torch.relu(fla)
+        fla = fla.view(-1, 1, 1, 32)  # Reshape to (batch_size, 1, 1, 32)
+
+        fha = self.fc2(attributes)
+        fha = torch.relu(fha)
+        fha = fha.view(-1, 1, 1, 64)  # Reshape to (batch_size, 1, 1, 64)
+
+        return fla, fha
+
+
 # Define the main model
 class XYCNN(nn.Module):
     def __init__(self):
@@ -324,7 +345,7 @@ class SingleYawCNN(nn.Module):
         self.init_conv = AtrousResNet50()
 
         # Fully connected layers for double values
-        self.fcn = FullyConnectedNN()
+        self.fcn = SingleFullyConnectedNN()
 
         # Further convolutional layers
         self.conv = nn.Conv2d(
@@ -338,10 +359,12 @@ class SingleYawCNN(nn.Module):
 
         self.final_layer = nn.Linear(608, 1)
 
-    def forward(self, image, robot_size, start_orientation, goal_orientation):
+    def forward(
+        self, image, robot_size, start_orientation, goal_orientation, x_pose, y_pose
+    ):
         # Combine individual attributes into a single tensor
         path_attributes = torch.stack(
-            [robot_size, start_orientation, goal_orientation], dim=1
+            [robot_size, start_orientation, goal_orientation, x_pose, y_pose], dim=1
         )
 
         # Pass attributes through the fully connected network

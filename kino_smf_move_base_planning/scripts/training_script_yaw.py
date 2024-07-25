@@ -99,7 +99,6 @@ def evaluate_model(model, test_loader, yaw_criterion):
 # Hyperparameters and dataset setup
 
 raw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
-xy_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/path"
 yaw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation"
 
 image_paths, start_orientations, goal_orientations = get_images_and_params(
