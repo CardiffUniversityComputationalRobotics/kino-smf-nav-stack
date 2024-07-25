@@ -480,8 +480,10 @@ void OnlinePlannFramework::odomCallback(const nav_msgs::msg::Odometry::SharedPtr
 
     if ((goal_available_) &&
         sqrt(pow(goal_odom_frame_[0] - last_robot_pose_.getOrigin().getX(), 2.0) +
-             pow(goal_odom_frame_[1] - last_robot_pose_.getOrigin().getY(), 2.0)) < (goal_radius_ + 0.2) &&
-        abs(yaw - goal_odom_frame_[2]) < (yaw_goal_tolerance_ + 0.2))
+             pow(goal_odom_frame_[1] - last_robot_pose_.getOrigin().getY(), 2.0)) < (goal_radius_ + 0.2)
+        //  &&
+        // abs(yaw - goal_odom_frame_[2]) < (yaw_goal_tolerance_ + 0.2)
+    )
     {
         goal_available_ = false;
         std_msgs::msg::Bool goal_reached;
@@ -2030,9 +2032,9 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
         std::string date = getCurrentDateTime();
         test_filename.append(date);
         test_filename.append("_");
-        test_filename.append(std::to_string(start[2]));
+        test_filename.append(std::to_string(wrapAngle(start[2])));
         test_filename.append("_");
-        test_filename.append(std::to_string(goal[2]));
+        test_filename.append(std::to_string(wrapAngle(goal[2])));
         test_filename.append(".png");
 
         cv::imwrite(test_filename, test_image);
@@ -2072,9 +2074,9 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
         std::string train_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/path/";
         train_filename.append(date);
         train_filename.append("_");
-        train_filename.append(std::to_string(start[2]));
+        train_filename.append(std::to_string(wrapAngle(start[2])));
         train_filename.append("_");
-        train_filename.append(std::to_string(goal[2]));
+        train_filename.append(std::to_string(wrapAngle(goal[2])));
         train_filename.append(".png");
 
         cv::imwrite(train_filename, train_image);
@@ -2088,9 +2090,9 @@ void OnlinePlannFramework::saveGridPath(const std::vector<double> start, const s
         std::string train_yaw_filename = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation/";
         train_yaw_filename.append(date);
         train_yaw_filename.append("_");
-        train_yaw_filename.append(std::to_string(start[2]));
+        train_yaw_filename.append(std::to_string(wrapAngle(start[2])));
         train_yaw_filename.append("_");
-        train_yaw_filename.append(std::to_string(goal[2]));
+        train_yaw_filename.append(std::to_string(wrapAngle(goal[2])));
         train_yaw_filename.append("yaw");
         train_yaw_filename.append(".png");
 
@@ -2111,8 +2113,6 @@ std::string OnlinePlannFramework::getCurrentDateTime()
 
 double OnlinePlannFramework::wrapAngle(double angle)
 {
-    // fmod returns the remainder of angle / TWO_PI, which can be negative
-    angle = fmod(angle, 2.0 * M_PI);
 
     // Adjust the result to ensure it's in the range [0, 2*pi)
     if (angle < 0)
