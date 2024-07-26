@@ -141,7 +141,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 
 trained_model = train_model(
-    model, train_loader, yaw_criterion, optimizer, num_epochs=100
+    model, train_loader, yaw_criterion, optimizer, num_epochs=2000
 )
 
 model_path = (

@@ -129,9 +129,9 @@ def get_pdf_images(directory):
         for i in range(0, len(image)):
             for j in range(0, len(image)):
                 if 4.2 > image[i][j] > 3.8:
-                    pdf_image[i, j] = 1.0
+                    pdf_image[i][j] = 1.0
                 else:
-                    pdf_image[i, j] = 0.0
+                    pdf_image[i][j] = 0.0
 
         # cv2.imwrite("pdf_image.png", image)
 
@@ -140,7 +140,7 @@ def get_pdf_images(directory):
         for i in range(0, len(image)):
             for j in range(0, len(image)):
                 if 4.2 > image[i][j] > 3.8:
-                    probability_map[i, j] = 1.0
+                    probability_map[i][j] = 1.0
 
         probability_map = probability_map * 5
 
@@ -184,9 +184,35 @@ def blur_around_cell(array, i, j, blur_radius=3, sigma=1):
 
     # Combine the original array with the blurred ROI
     blurred_array = array.copy()
-    blurred_array[i_start:i_end, j_start:j_end] = blurred_roi
+    blurred_array[i_start:i_end, j_start:j_end] = np.clip(blurred_roi, 0, 6.28)
 
     return blurred_array
+
+
+def propagate_value_with_radius(array, index, radius):
+    """
+    Propagate the value from a specific index to its neighbors within a given radius in a 2D array.
+
+    Parameters:
+    array (np.ndarray): The input 2D NumPy array.
+    index (tuple): The (row, column) index to propagate from.
+    radius (int): The radius within which to propagate the value.
+
+    Returns:
+    np.ndarray: The modified 2D NumPy array.
+    """
+    rows, cols = array.shape
+    row, col = index
+    value = array[row, col]
+
+    # Propagate the value to the neighbors within the given radius
+    for dr in range(-radius, radius + 1):
+        for dc in range(-radius, radius + 1):
+            r, c = row + dr, col + dc
+            if 0 <= r < rows and 0 <= c < cols:
+                array[r, c] = value
+
+    return array
 
 
 def get_yaw_images(directory):
@@ -204,57 +230,29 @@ def get_yaw_images(directory):
         image = cv2.imread(i, cv2.IMREAD_GRAYSCALE)
         image = image.astype(np.float32)
         image = (image / 255.0) * 8.0
-        # np.set_printoptions(threshold=sys.maxsize)
-        # print(image)
 
         yaw_image = np.copy(image)
 
         for i in range(0, len(image)):
             for j in range(0, len(image)):
                 if 6.8 < image[i][j] < 7.2:
-                    yaw_image[i, j] = 20.0
+                    yaw_image[i][j] = 20.0
 
-        # yaw_image = yaw_image * 5
-
-        # for i in range(0, len(yaw_image)):
-        #     for j in range(0, len(yaw_image)):
-        #         if yaw_image[i][j] < 0.0:
-        #             yaw_image[i, j] = 0.0
-
-        # for i in range(0, len(image)):
-        #     for j in range(0, len(image)):
-        #         yaw_image[i, j] += 1.0
-
-        # yaw_image = cv2.GaussianBlur(yaw_image, (0, 0), 1.0)
-
-        # yaw_image = yaw_image / 5
-
-        # for i in range(0, len(image)):
-        #     for j in range(0, len(image)):
-        #         yaw_image[i, j] -= 1.0
-
-        # for i in range(0, len(image)):
-        #     for j in range(0, len(image)):
-        #         if yaw_image[i, j] < 0.0:
-        #             yaw_image[i, j] = -0.5
-
-        # for i in range(0, len(image)):
-        #     for j in range(0, len(image)):
-        #         if image[i][j] >= 0.0 and image[i][j] < 6.8:
-        #             yaw_image[i, j] = image[i][j]
-        #             yaw_image = blur_around_cell(
-        #                 yaw_image, i, j, blur_radius=2, sigma=1
-        #             )
+        for i in range(0, len(image)):
+            for j in range(0, len(image)):
+                if image[i][j] >= 0.0 and image[i][j] < 6.8:
+                    yaw_image[i][j] = image[i][j]
+                    yaw_image = propagate_value_with_radius(yaw_image, (i, j), 2)
 
         for i in range(0, len(image)):
             for j in range(0, len(image)):
                 if image[i][j] >= 0.0 and image[i][j] < 6.5:
-                    yaw_image[i, j] = image[i][j]
+                    yaw_image[i][j] = image[i][j]
 
         # np.set_printoptions(threshold=sys.maxsize)
         # print(yaw_image)
 
-        # cv2.imwrite("yaw_image.png", (yaw_image / 7) * 255)
+        # cv2.imwrite("yaw_image.png", (yaw_image / 20) * 255)
 
         yaw_image = np.around(yaw_image, decimals=4)
         # np.set_printoptions(threshold=sys.maxsize)

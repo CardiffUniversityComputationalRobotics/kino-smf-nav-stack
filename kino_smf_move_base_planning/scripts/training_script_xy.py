@@ -102,7 +102,6 @@ def evaluate_model(model, test_loader, xy_criterion):
 
 raw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
 xy_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/path"
-yaw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/train/orientation"
 
 image_paths, start_orientations, goal_orientations = get_images_and_params(
     raw_image_path
@@ -142,7 +141,9 @@ xy_criterion = nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 
-trained_model = train_model(model, train_loader, xy_criterion, optimizer, num_epochs=25)
+trained_model = train_model(
+    model, train_loader, xy_criterion, optimizer, num_epochs=2000
+)
 
 model_path = (
     "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_xy.pth"
