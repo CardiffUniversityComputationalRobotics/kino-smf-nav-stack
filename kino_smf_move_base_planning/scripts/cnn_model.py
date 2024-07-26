@@ -165,11 +165,11 @@ class SingleYawCNN(nn.Module):
         )  # Adjusted in_channels
         self.aspp = ASPP(2112, 256 + 64, [3, 6, 12])  # Adjusted in_channels
 
-        self.max_pool_2d = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.max_pool_2d = nn.MaxPool2d(kernel_size=6, stride=6)
 
         self.flatten = nn.Flatten()
 
-        self.final_layer = nn.Linear(608, 1)
+        self.final_layer = nn.Linear(9728, 1)
 
     def forward(
         self, image, robot_size, start_orientation, goal_orientation, x_pose, y_pose
