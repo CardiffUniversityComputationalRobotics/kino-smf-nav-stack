@@ -190,3 +190,16 @@ class SingleFullyConnectedNN(nn.Module):
         fha = fha.view(-1, 1, 1, 64)  # Reshape to (batch_size, 1, 1, 64)
 
         return fla, fha
+
+class MultiLayerFCN(nn.Module):
+    def __init__(self):
+        super(MultiLayerFCN, self).__init__()
+        self.fc1 = nn.Linear(9278, 512)  # First layer
+        self.fc2 = nn.Linear(512, 128)   # Second layer
+        self.fc3 = nn.Linear(128, 1)     # Final layer producing a single output
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))  # ReLU activation after first layer
+        x = torch.relu(self.fc2(x))  # ReLU activation after second layer
+        x = self.fc3(x)              # No activation for the final layer
+        return x
