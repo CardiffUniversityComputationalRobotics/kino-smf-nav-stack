@@ -194,7 +194,7 @@ class SingleFullyConnectedNN(nn.Module):
 class MultiLayerFCN(nn.Module):
     def __init__(self):
         super(MultiLayerFCN, self).__init__()
-        self.fc1 = nn.Linear(9278, 512)  # First layer
+        self.fc1 = nn.Linear(9728, 512)  # First layer
         self.fc2 = nn.Linear(512, 128)   # Second layer
         self.fc3 = nn.Linear(128, 1)     # Final layer producing a single output
 
