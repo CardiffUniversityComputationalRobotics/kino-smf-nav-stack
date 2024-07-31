@@ -148,16 +148,8 @@ def get_pdf_images(directory):
 
         probability_map = np.around(probability_map, decimals=4)
 
-        # np.set_printoptions(threshold=sys.maxsize)
-        # print(probability_map)
-        # cv2.imwrite("pdf_image.png", probability_map * 255)
-
         pdf_maps.append(probability_map)
 
-    # np.set_printoptions(threshold=sys.maxsize)
-    # print(pdf_maps[-1])
-    # cv2.imwrite("pdf_image.png", pdf_maps[-1] * 255)
-    # print(complete_file_paths[-1])
 
     return pdf_maps
 
@@ -261,7 +253,7 @@ def get_yaw_images(directory):
         for i in range(0, len(image)):
             for j in range(0, len(image)):
                 if 6.8 < image[i][j] < 7.2:
-                    yaw_image[i][j] = 20.0
+                    yaw_image[i][j] = 0.0
 
         for i in range(0, len(image)):
             for j in range(0, len(image)):
@@ -274,11 +266,6 @@ def get_yaw_images(directory):
                 if image[i][j] >= 0.0 and image[i][j] < 6.5:
                     yaw_image[i][j] = image[i][j]
 
-        # np.set_printoptions(threshold=sys.maxsize)
-        # print(yaw_image)
-
-        # cv2.imwrite("yaw_image.png", (yaw_image / 20) * 255)
-
         yaw_image = np.around(yaw_image, decimals=4)
         # np.set_printoptions(threshold=sys.maxsize)
         # print(probability_map)
@@ -287,12 +274,57 @@ def get_yaw_images(directory):
 
         yaw_maps.append(yaw_image)
 
-    # np.set_printoptions(threshold=sys.maxsize)
-    # print(yaw_maps[-6])
-    # cv2.imwrite("yaw_image.png", yaw_maps[-6] * 255)
-    # print(complete_file_paths[-6])
 
     return yaw_maps
+
+
+def get_yaw_with_mask_images(directory):
+
+    filenames = list_files_in_directory(directory)
+
+    complete_file_paths = []
+
+    for i in filenames:
+        complete_file_paths.append(directory + "/" + i)
+
+    yaw_maps = []
+    masked_maps = []
+
+    for i in complete_file_paths:
+        masked_map = np.zeros((100,100), np.float32)
+
+        image = cv2.imread(i, cv2.IMREAD_GRAYSCALE)
+        image = image.astype(np.float32)
+        image = (image / 255.0) * 8.0
+
+        yaw_image = np.copy(image)
+
+        for i in range(0, len(image)):
+            for j in range(0, len(image)):
+                if 6.8 < image[i][j] < 7.2:
+                    yaw_image[i][j] = 0.0
+
+        for i in range(0, len(image)):
+            for j in range(0, len(image)):
+                if image[i][j] >= 0.0 and image[i][j] < 6.8:
+                    yaw_image[i][j] = image[i][j]
+                    yaw_image = propagate_value_with_radius(yaw_image, (i, j), 2)
+                    masked_map[i][j] = 1
+
+        for i in range(0, len(image)):
+            for j in range(0, len(image)):
+                if image[i][j] >= 0.0 and image[i][j] < 6.5:
+                    yaw_image[i][j] = image[i][j]
+
+
+        yaw_image = np.around(yaw_image, decimals=4)
+
+
+        yaw_maps.append(yaw_image)
+        masked_maps.append(masked_map)
+
+
+    return yaw_maps, masked_maps
 
 
 def get_xy_yaw_discreet_images(directory):
