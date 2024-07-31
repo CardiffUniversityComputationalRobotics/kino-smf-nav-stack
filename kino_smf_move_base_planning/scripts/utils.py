@@ -268,3 +268,53 @@ def get_yaw_images(directory):
     # print(complete_file_paths[-6])
 
     return yaw_maps
+
+
+def get_xy_yaw_discreet_images(directory):
+
+    filenames = list_files_in_directory(directory)
+
+    complete_file_paths = []
+
+    for i in filenames:
+        complete_file_paths.append(directory + "/" + i)
+
+    yaw_maps = []
+
+    for i in complete_file_paths:
+        image = cv2.imread(i, cv2.IMREAD_GRAYSCALE)
+        image = image.astype(np.float32)
+        image = (image / 255.0) * 8.0
+
+        yaw_image = np.copy(image)
+
+        for i in range(0, len(image)):
+            for j in range(0, len(image)):
+                if 6.8 < image[i][j] < 7.2:
+                    yaw_image[i][j] = 20.0
+
+        for i in range(0, len(image)):
+            for j in range(0, len(image)):
+                if image[i][j] >= 0.0 and image[i][j] < 6.5:
+                    yaw_image[i][j] = image[i][j]
+
+        yaw_maps.append(yaw_image)
+
+    xy_yaw_disc_maps = []
+
+    for map in yaw_maps:
+        xy_yaw_disc_map = np.zeros((100, 100, 100), np.float32)
+        for i in range(0, len(map)):
+            for j in range(0, len(map)):
+                if map[i][j] >= 0.0 and map[i][j] < 6.5:
+                    depth = map[i][j] / 0.0628
+                    depth = round(depth)
+                    # print(depth)
+                    if depth >= 100:
+                        depth = 0
+                    xy_yaw_disc_map[i][j][depth] = 1.0
+                    # print("found")
+        # print(type(xy_yaw_disc_map))
+        xy_yaw_disc_maps.append(xy_yaw_disc_map)
+
+    return xy_yaw_disc_maps
