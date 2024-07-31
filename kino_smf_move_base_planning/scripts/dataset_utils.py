@@ -3,8 +3,8 @@ from torch.utils.data import Dataset
 from PIL import Image
 import cv2
 import numpy as np
+import torchvision.transforms as transforms
 import sys
-
 
 # Define a custom dataset
 class CustomDatasetXY(Dataset):
@@ -38,13 +38,13 @@ class CustomDatasetXY(Dataset):
 
         image = Image.fromarray(image)
 
-        pdf_image = Image.fromarray(self.pdf_maps[idx])
+        pdf_image = torch.from_numpy(self.pdf_maps[idx])
 
         if self.transform:
             image = self.transform(image)
             zero_channels = torch.zeros(2, image.size(1), image.size(2))
             image = torch.cat((image, zero_channels), dim=0)
-            pdf_image = self.transform(pdf_image)
+            # pdf_image = torch.from_numpy(pdf_image)
 
         robot_size = torch.tensor([self.robot_size[idx]], dtype=torch.float32)
         start_orientation = torch.tensor(
@@ -62,6 +62,65 @@ class CustomDatasetXY(Dataset):
             goal_orientation,
         )
 
+
+# Define a custom dataset
+class CustomDatasetXYYawDiscreet(Dataset):
+    def __init__(
+        self,
+        image_paths,
+        xy_yaw_discreet_maps,
+        robot_size,
+        start_orientation,
+        goal_orientation,
+        transform=None,
+    ):
+        self.image_paths = image_paths
+        self.xy_yaw_discreet_maps = xy_yaw_discreet_maps
+        self.robot_size = robot_size
+        self.start_orientation = start_orientation
+        self.goal_orientation = goal_orientation
+        self.transform = transform
+        # self.transform_disc = transforms.Compose([transforms.ToTensor()])
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        image = cv2.imread(self.image_paths[idx], cv2.IMREAD_GRAYSCALE)
+        image = image.astype(np.float32)
+        image = (image / 255.0) * 6.0
+        image = np.rint(image)
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(image)
+        # cv2.imwrite("input_image.png", image * 20)
+
+        image = Image.fromarray(image)
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(type(self.xy_yaw_discreet_maps[idx]))
+        # print(self.xy_yaw_discreet_maps[idx].shape)
+        xy_yaw_disc_image = torch.from_numpy(self.xy_yaw_discreet_maps[idx])
+
+        if self.transform:
+            image = self.transform(image)
+            zero_channels = torch.zeros(2, image.size(1), image.size(2))
+            image = torch.cat((image, zero_channels), dim=0)
+            # xy_yaw_disc_image = self.transform_disc(xy_yaw_disc_image)
+
+        robot_size = torch.tensor([self.robot_size[idx]], dtype=torch.float32)
+        start_orientation = torch.tensor(
+            [self.start_orientation[idx]], dtype=torch.float32
+        )
+        goal_orientation = torch.tensor(
+            [self.goal_orientation[idx]], dtype=torch.float32
+        )
+
+        return (
+            image,
+            xy_yaw_disc_image,
+            robot_size,
+            start_orientation,
+            goal_orientation,
+        )
 
 class CustomDatasetYaw(Dataset):
     def __init__(
@@ -94,7 +153,7 @@ class CustomDatasetYaw(Dataset):
 
         image = Image.fromarray(image)
 
-        yaw_image = Image.fromarray(self.yaw_maps[idx])
+        yaw_image = torch.from_numpy(self.yaw_maps[idx])
         # yaw_image = self.yaw_maps[idx]
 
         # print("+++++++++++++++++++++++++++++++++++++++")
@@ -108,7 +167,7 @@ class CustomDatasetYaw(Dataset):
             zero_channels = torch.zeros(2, image.size(1), image.size(2))
             image = torch.cat((image, zero_channels), dim=0)
 
-            yaw_image = self.transform(yaw_image)
+            # yaw_image = self.transform(yaw_image)
 
         # print("+++++++++++++++++++++++++++++++++++++++")
         # print("YAW MAPS WITH TRANSFORM")
