@@ -9,6 +9,7 @@ from cnn_model import XYCNN
 
 from utils import get_images_and_params, get_pdf_images
 import sys
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 torch.cuda.empty_cache()
 
@@ -65,6 +66,9 @@ def evaluate_model(model, test_loader, xy_criterion):
     model.eval()
     test_loss = 0.0
 
+    groundtruths = []
+    inferences = []
+
     with torch.no_grad():
         for (
             inputs,
@@ -90,12 +94,16 @@ def evaluate_model(model, test_loader, xy_criterion):
             xy_inference = model(
                 inputs, robot_size, start_orientations, goal_orientations
             )
+            groundtruths.extend(xy_groundtruth.flatten().cpu().numpy())
+            inferences.extend(xy_inference.flatten().cpu().numpy())
+            # print(xy_inference.cpu().numpy().shape)
             xy_loss = xy_criterion(xy_inference, xy_groundtruth)
 
             test_loss += xy_loss.item()
 
     avg_test_loss = test_loss / len(test_loader)
     print(f"Test Loss: {avg_test_loss}")
+    return groundtruths, inferences
 
 
 # Hyperparameters and dataset setup
@@ -150,4 +158,25 @@ model_path = (
 )
 torch.save(model.state_dict(), model_path)
 
-evaluate_model(trained_model, test_loader, xy_criterion)
+groundtruths, inferences = evaluate_model(trained_model, test_loader, xy_criterion)
+
+# Convert lists to numpy arrays
+groundtruths = np.array(groundtruths, np.float32)
+inferences = np.array(inferences, np.float32)
+
+# Apply a threshold to binarize the inferences
+threshold = 0.5
+groundtruths = (groundtruths > threshold).astype(np.float32)
+inferences = (inferences > threshold).astype(np.float32)
+
+
+# Calculate and print metrics
+accuracy = accuracy_score(groundtruths, inferences)
+precision = precision_score(groundtruths, inferences, average="binary")
+recall = recall_score(groundtruths, inferences, average="binary")
+f1 = f1_score(groundtruths, inferences, average="binary")
+
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Precision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"F1 Score: {f1:.4f}")
