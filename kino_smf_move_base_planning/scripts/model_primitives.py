@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torchvision.models as models
 from torchvision.models import ResNet50_Weights
 import torchvision
+import math
 
 # Define ASPP module
 class ASPP(nn.Module):
@@ -203,3 +204,12 @@ class MultiLayerFCN(nn.Module):
         x = torch.relu(self.fc2(x))  # ReLU activation after second layer
         x = self.fc3(x)              # No activation for the final layer
         return x
+    
+class MaskedCircularLoss(nn.Module):
+    def __init__(self):
+        super(MaskedCircularLoss, self).__init__()
+
+    def forward(self, predictions, targets, mask):
+        diff = (predictions - targets + math.pi) % (2 * math.pi) - math.pi
+        masked_diff = diff * mask
+        return torch.mean(masked_diff ** 2)
