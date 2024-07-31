@@ -189,7 +189,7 @@ trained_model = train_model(
 )
 
 model_path = (
-    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model__single_yaw.pth"
+    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_single_yaw.pth"
 )
 torch.save(model.state_dict(), model_path)
 

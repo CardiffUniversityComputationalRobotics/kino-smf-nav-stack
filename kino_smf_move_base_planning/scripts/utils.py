@@ -214,6 +214,31 @@ def propagate_value_with_radius(array, index, radius):
 
     return array
 
+def propagate_value_with_radius_3d(array, index, radius):
+    """
+    Propagate the value from a specific index to its neighbors within a given radius 
+    in the first two dimensions of a 3D array.
+
+    Parameters:
+    array (np.ndarray): The input 3D NumPy array.
+    index (tuple): The (depth, row, column) index to propagate from.
+    radius (int): The radius within which to propagate the value.
+
+    Returns:
+    np.ndarray: The modified 3D NumPy array.
+    """
+    depth, rows, cols = array.shape
+    d, row, col = index
+    value = array[d, row, col]
+
+    # Propagate the value to the neighbors within the given radius
+    for dr in range(-radius, radius + 1):
+        for dc in range(-radius, radius + 1):
+            r, c = row + dr, col + dc
+            if 0 <= r < rows and 0 <= c < cols:
+                array[d, r, c] = value
+
+    return array
 
 def get_yaw_images(directory):
 
@@ -309,12 +334,10 @@ def get_xy_yaw_discreet_images(directory):
                 if map[i][j] >= 0.0 and map[i][j] < 6.5:
                     depth = map[i][j] / 0.0628
                     depth = round(depth)
-                    # print(depth)
                     if depth >= 100:
                         depth = 0
-                    xy_yaw_disc_map[i][j][depth] = 1.0
-                    # print("found")
-        # print(type(xy_yaw_disc_map))
+                    xy_yaw_disc_map[depth][i][j] = 1.0
+                    xy_yaw_disc_map = propagate_value_with_radius_3d(yaw_image, (depth, i, j), 2)
         xy_yaw_disc_maps.append(xy_yaw_disc_map)
 
     return xy_yaw_disc_maps
