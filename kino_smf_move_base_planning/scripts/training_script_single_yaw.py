@@ -9,6 +9,7 @@ from cnn_model import SingleYawCNN
 
 from utils import get_images_yaw_and_params
 import sys
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 torch.cuda.empty_cache()
 
@@ -65,6 +66,8 @@ def train_model(model, train_loader, yaw_criterion, optimizer, num_epochs=25):
         print(
             f"Epoch {epoch+1}/{num_epochs}, Loss1: {epoch_yaw_loss/len(train_loader)}"
         )
+        if epoch_yaw_loss / len(train_loader) < 4:
+            return model
 
     print("Training complete")
     return model
@@ -73,6 +76,9 @@ def train_model(model, train_loader, yaw_criterion, optimizer, num_epochs=25):
 def evaluate_model(model, test_loader, yaw_criterion):
     model.eval()
     test_loss = 0.0
+
+    groundtruths = []
+    inferences = []
 
     with torch.no_grad():
         for (
@@ -110,12 +116,18 @@ def evaluate_model(model, test_loader, yaw_criterion):
                 x_pose,
                 y_pose,
             )
+
+            groundtruths.extend(yaw_groundtruth.flatten().cpu().numpy())
+            inferences.extend(yaw_inference.flatten().cpu().numpy())
+
             yaw_loss = yaw_criterion(yaw_inference, yaw_groundtruth)
 
             test_loss += yaw_loss.item()
 
     avg_test_loss = test_loss / len(test_loader)
     print(f"Test Loss: {avg_test_loss}")
+
+    return groundtruths, inferences
 
 
 # Hyperparameters and dataset setup
@@ -173,12 +185,25 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 
 trained_model = train_model(
-    model, train_loader, yaw_criterion, optimizer, num_epochs=100
+    model, train_loader, yaw_criterion, optimizer, num_epochs=2000
 )
 
 model_path = (
-    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_yaw.pth"
+    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model__single_yaw.pth"
 )
 torch.save(model.state_dict(), model_path)
 
-evaluate_model(trained_model, test_loader, yaw_criterion)
+groundtruths, inferences = evaluate_model(trained_model, test_loader, yaw_criterion)
+
+# Convert lists to numpy arrays
+groundtruths = np.array(groundtruths, np.float32)
+inferences = np.array(inferences, np.float32)
+
+# Calculate and print regression metrics
+mse = mean_squared_error(groundtruths, inferences)
+mae = mean_absolute_error(groundtruths, inferences)
+r2 = r2_score(groundtruths, inferences)
+
+print(f"Mean Squared Error: {mse:.4f}")
+print(f"Mean Absolute Error: {mae:.4f}")
+print(f"R^2 Score: {r2:.4f}")
