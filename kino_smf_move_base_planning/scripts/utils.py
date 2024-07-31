@@ -369,7 +369,7 @@ def get_xy_yaw_discreet_images(directory):
                     if depth >= 100:
                         depth = 0
                     xy_yaw_disc_map[depth][i][j] = 1.0
-                    xy_yaw_disc_map = propagate_value_with_radius_3d(yaw_image, (depth, i, j), 2)
+                    xy_yaw_disc_map = propagate_value_with_radius_3d(xy_yaw_disc_map, (depth, i, j), 2)
         xy_yaw_disc_maps.append(xy_yaw_disc_map)
 
     return xy_yaw_disc_maps
