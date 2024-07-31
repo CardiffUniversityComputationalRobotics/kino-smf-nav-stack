@@ -38,13 +38,19 @@ class CustomDatasetXY(Dataset):
 
         image = Image.fromarray(image)
 
-        pdf_image = torch.from_numpy(self.pdf_maps[idx])
+        # print("#####")
+        # print(self.pdf_maps[idx].shape)
+        pdf_image = torch.from_numpy(self.pdf_maps[idx]).unsqueeze(0)
+        # pdf_image = Image.fromarray(self.pdf_maps[idx])
+        # print(pdf_image.shape)
 
         if self.transform:
             image = self.transform(image)
             zero_channels = torch.zeros(2, image.size(1), image.size(2))
             image = torch.cat((image, zero_channels), dim=0)
+            # pdf_image = self.transform(pdf_image)
             # pdf_image = torch.from_numpy(pdf_image)
+            # print(pdf_image.shape)
 
         robot_size = torch.tensor([self.robot_size[idx]], dtype=torch.float32)
         start_orientation = torch.tensor(
@@ -99,6 +105,7 @@ class CustomDatasetXYYawDiscreet(Dataset):
         # print(type(self.xy_yaw_discreet_maps[idx]))
         # print(self.xy_yaw_discreet_maps[idx].shape)
         xy_yaw_disc_image = torch.from_numpy(self.xy_yaw_discreet_maps[idx])
+        
 
         if self.transform:
             image = self.transform(image)
@@ -153,7 +160,7 @@ class CustomDatasetYaw(Dataset):
 
         image = Image.fromarray(image)
 
-        yaw_image = torch.from_numpy(self.yaw_maps[idx])
+        yaw_image = torch.from_numpy(self.yaw_maps[idx]).unsqueeze(0)
         # yaw_image = self.yaw_maps[idx]
 
         # print("+++++++++++++++++++++++++++++++++++++++")
