@@ -9,6 +9,8 @@ from cnn_model import YawCNN
 
 from utils import get_images_and_params, get_yaw_images
 import sys
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
 
 torch.cuda.empty_cache()
 
@@ -63,6 +65,9 @@ def evaluate_model(model, test_loader, yaw_criterion):
     model.eval()
     test_loss = 0.0
 
+    groundtruths = []
+    inferences = []
+
     with torch.no_grad():
         for (
             inputs,
@@ -88,12 +93,17 @@ def evaluate_model(model, test_loader, yaw_criterion):
             yaw_inference = model(
                 inputs, robot_size, start_orientations, goal_orientations
             )
+
+            groundtruths.extend(yaw_groundtruth.flatten().cpu().numpy())
+            inferences.extend(yaw_inference.flatten().cpu().numpy())
+
             yaw_loss = yaw_criterion(yaw_inference, yaw_groundtruth)
 
             test_loss += yaw_loss.item()
 
     avg_test_loss = test_loss / len(test_loader)
     print(f"Test Loss: {avg_test_loss}")
+    return groundtruths, inferences
 
 
 # Hyperparameters and dataset setup
@@ -149,4 +159,17 @@ model_path = (
 )
 torch.save(model.state_dict(), model_path)
 
-evaluate_model(trained_model, test_loader, yaw_criterion)
+groundtruths, inferences = evaluate_model(trained_model, test_loader, yaw_criterion)
+
+# Convert lists to numpy arrays
+groundtruths = np.array(groundtruths, np.float32)
+inferences = np.array(inferences, np.float32)
+
+# Calculate and print regression metrics
+mse = mean_squared_error(groundtruths, inferences)
+mae = mean_absolute_error(groundtruths, inferences)
+r2 = r2_score(groundtruths, inferences)
+
+print(f"Mean Squared Error: {mse:.4f}")
+print(f"Mean Absolute Error: {mae:.4f}")
+print(f"R^2 Score: {r2:.4f}")
