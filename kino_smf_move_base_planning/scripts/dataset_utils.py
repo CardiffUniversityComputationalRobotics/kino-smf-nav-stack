@@ -198,6 +198,79 @@ class CustomDatasetYaw(Dataset):
             goal_orientation,
         )
 
+class CustomDatasetYawMasked(Dataset):
+    def __init__(
+        self,
+        image_paths,
+        yaw_maps,
+        masked_maps,
+        robot_size,
+        start_orientation,
+        goal_orientation,
+        transform=None,
+    ):
+        self.image_paths = image_paths
+        self.yaw_maps = yaw_maps
+        self.masked_maps = masked_maps
+        self.robot_size = robot_size
+        self.start_orientation = start_orientation
+        self.goal_orientation = goal_orientation
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        image = cv2.imread(self.image_paths[idx], cv2.IMREAD_GRAYSCALE)
+        image = image.astype(np.float32)
+        image = (image / 255.0) * 6.0
+        image = np.rint(image)
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(image)
+        # cv2.imwrite("input_image.png", image * 20)
+
+        image = Image.fromarray(image)
+
+        yaw_image = torch.from_numpy(self.yaw_maps[idx]).unsqueeze(0)
+        masked_image = torch.from_numpy(self.masked_maps[idx]).unsqueeze(0)
+        # yaw_image = self.yaw_maps[idx]
+
+        # print("+++++++++++++++++++++++++++++++++++++++")
+        # print("YAW MAPS WITHOUT TRANSFORM")
+        # print("+++++++++++++++++++++++++++++++++++++++")
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(np.array(yaw_image))
+
+        if self.transform:
+            image = self.transform(image)
+            zero_channels = torch.zeros(2, image.size(1), image.size(2))
+            image = torch.cat((image, zero_channels), dim=0)
+
+            # yaw_image = self.transform(yaw_image)
+
+        # print("+++++++++++++++++++++++++++++++++++++++")
+        # print("YAW MAPS WITH TRANSFORM")
+        # print("+++++++++++++++++++++++++++++++++++++++")
+        # np.set_printoptions(threshold=sys.maxsize)
+        # print(yaw_image.detach().cpu().numpy())
+
+        robot_size = torch.tensor([self.robot_size[idx]], dtype=torch.float32)
+        start_orientation = torch.tensor(
+            [self.start_orientation[idx]], dtype=torch.float32
+        )
+        goal_orientation = torch.tensor(
+            [self.goal_orientation[idx]], dtype=torch.float32
+        )
+
+        return (
+            image,
+            yaw_image,
+            masked_image,
+            robot_size,
+            start_orientation,
+            goal_orientation,
+        )
+
 
 class CustomDatasetSingleYaw(Dataset):
     def __init__(
