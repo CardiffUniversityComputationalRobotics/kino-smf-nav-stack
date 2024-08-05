@@ -4,14 +4,14 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, random_split
 import numpy as np
 
-from dataset_utils import CustomDatasetYaw
+from dataset_utils import CustomDatasetYawMasked
 from cnn_model import YawCNN
 from model_primitives import MaskedCircularLoss
 
 from utils import get_images_and_params, get_yaw_with_mask_images
 import sys
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-
+import cv2
 
 torch.cuda.empty_cache()
 
@@ -32,8 +32,8 @@ def train_model(model, train_loader, yaw_criterion, optimizer, num_epochs=25):
             (
                 inputs,
                 yaw_groundtruth,
-                robot_size,
                 masked_maps,
+                robot_size,
                 start_orientations,
                 goal_orientations,
             ) = (
@@ -44,6 +44,16 @@ def train_model(model, train_loader, yaw_criterion, optimizer, num_epochs=25):
                 start_orientations.to(device),
                 goal_orientations.to(device),
             )
+
+            image_input = inputs[3][0].squeeze().cpu().numpy()
+            cv2.imwrite("input_image.png", image_input / 7 * 255)
+            print("printing")
+
+            image_groundtruth = yaw_groundtruth[3][0].squeeze().cpu().numpy()
+            cv2.imwrite("groundtruth_image.png", image_groundtruth / 7 * 255)
+
+            yaw_groundtruth = inputs[3][0].squeeze().cpu().numpy()
+            cv2.imwrite("mask.png", yaw_groundtruth / 7 * 255)
 
             optimizer.zero_grad()
             yaw_inference = model(
@@ -115,8 +125,8 @@ def evaluate_model(model, test_loader, yaw_criterion):
 
 # Hyperparameters and dataset setup
 
-raw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
-yaw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation"
+raw_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
+yaw_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation"
 
 image_paths, start_orientations, goal_orientations = get_images_and_params(
     raw_image_path
@@ -130,7 +140,7 @@ yaw_maps, masked_maps = get_yaw_with_mask_images(yaw_image_path)
 
 transform = transforms.Compose([transforms.Resize((100, 100)), transforms.ToTensor()])
 
-dataset = CustomDatasetYaw(
+dataset = CustomDatasetYawMasked(
     image_paths,
     yaw_maps,
     masked_maps,
@@ -155,7 +165,7 @@ model = YawCNN().to(device)
 
 yaw_criterion = MaskedCircularLoss()
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
 
 
 trained_model = train_model(
@@ -163,9 +173,9 @@ trained_model = train_model(
 )
 
 model_path = (
-    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_yaw.pth"
+    "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_yaw_mask_.pth"
 )
-torch.save(model.state_dict(), model_path)
+torch.save(trained_model.state_dict(), model_path)
 
 groundtruths, inferences = evaluate_model(trained_model, test_loader, yaw_criterion)
 

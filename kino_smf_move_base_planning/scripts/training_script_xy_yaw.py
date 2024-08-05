@@ -114,4 +114,4 @@ trained_model = train_model(
 model_path = (
     "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model.pth"
 )
-torch.save(model.state_dict(), model_path)
+torch.save(trained_model.state_dict(), model_path)

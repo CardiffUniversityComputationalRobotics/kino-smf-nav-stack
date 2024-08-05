@@ -10,6 +10,8 @@ from cnn_model import XYCNN
 from utils import get_images_and_params, get_pdf_images
 import sys
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+import cv2
+import time
 
 torch.cuda.empty_cache()
 
@@ -40,6 +42,15 @@ def train_model(model, train_loader, xy_criterion, optimizer, num_epochs=25):
                 goal_orientations.to(device),
             )
 
+            # image_input = inputs[3][0].squeeze().cpu().numpy()
+            # cv2.imwrite("input_image.png", image_input / 7 * 255)
+            # print("printing")
+
+            # image_groundtruth = xy_groundtruth[3][0].squeeze().cpu().numpy()
+            # cv2.imwrite("groundtruth_image.png", image_groundtruth/ 1 * 255)
+
+            # time.sleep(2)
+
             optimizer.zero_grad()
             xy_inference = model(
                 inputs, robot_size, start_orientations, goal_orientations
@@ -55,8 +66,8 @@ def train_model(model, train_loader, xy_criterion, optimizer, num_epochs=25):
 
         print(f"Epoch {epoch+1}/{num_epochs}, Loss1: {epoch_xy_loss/len(train_loader)}")
 
-        if epoch_xy_loss / len(train_loader) < 0.024:
-            return model
+        # if epoch_xy_loss / len(train_loader) < 0.0149:
+        #     return model
 
     print("Training complete")
     return model
@@ -108,8 +119,8 @@ def evaluate_model(model, test_loader, xy_criterion):
 
 # Hyperparameters and dataset setup
 
-raw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
-xy_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/path"
+raw_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
+xy_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/path"
 
 image_paths, start_orientations, goal_orientations = get_images_and_params(
     raw_image_path
@@ -154,9 +165,9 @@ trained_model = train_model(
 )
 
 model_path = (
-    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_xy.pth"
+    "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_xy.pth"
 )
-torch.save(model.state_dict(), model_path)
+torch.save(trained_model.state_dict(), model_path)
 
 groundtruths, inferences = evaluate_model(trained_model, test_loader, xy_criterion)
 

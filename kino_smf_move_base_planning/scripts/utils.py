@@ -2,6 +2,8 @@ import os
 import cv2
 import numpy as np
 import sys
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 
 def list_files_in_directory(directory):
@@ -26,6 +28,8 @@ def get_images_and_params(directory):
 
     filenames = list_files_in_directory(directory)
 
+    # print(filenames[0])
+
     complete_file_paths = []
     start_orientation = []
     goal_orientation = []
@@ -37,6 +41,25 @@ def get_images_and_params(directory):
         goal_orientation.append(float(round(float(split_name[-1][:-5]), 3)))
 
     return complete_file_paths, start_orientation, goal_orientation
+
+def get_images_and_params_yaw(directory):
+
+    filenames = list_files_in_directory(directory)
+
+
+    complete_file_paths = []
+    yaw_images = []
+    start_orientation = []
+    goal_orientation = []
+
+    for i in filenames:
+        complete_file_paths.append(directory + "/" + i)
+        split_name = i.split("_")
+        start_orientation.append(float(round(float(split_name[2]), 3)))
+        goal_orientation.append(float(round(float(split_name[-1][:-5]), 3)))
+        yaw_images.append(get_yaw_image(directory + "/../train/orientation/" + i[:-4] + "yaw.png"))
+
+    return complete_file_paths, yaw_images, start_orientation, goal_orientation
 
 
 def get_images_yaw_and_params(map_directory, orientation_directory):
@@ -150,7 +173,6 @@ def get_pdf_images(directory):
 
         pdf_maps.append(probability_map)
 
-
     return pdf_maps
 
 
@@ -206,9 +228,10 @@ def propagate_value_with_radius(array, index, radius):
 
     return array
 
+
 def propagate_value_with_radius_3d(array, index, radius):
     """
-    Propagate the value from a specific index to its neighbors within a given radius 
+    Propagate the value from a specific index to its neighbors within a given radius
     in the first two dimensions of a 3D array.
 
     Parameters:
@@ -231,6 +254,42 @@ def propagate_value_with_radius_3d(array, index, radius):
                 array[d, r, c] = value
 
     return array
+
+
+def get_yaw_image(directory):
+
+    # print(directory)
+    image = cv2.imread(directory, cv2.IMREAD_GRAYSCALE)
+    image = image.astype(np.float32)
+    image = (image / 255.0) * 8.0
+
+    yaw_image = np.copy(image)
+
+    for i in range(0, len(image)):
+        for j in range(0, len(image)):
+            if 6.8 < image[i][j] < 7.2:
+                yaw_image[i][j] = 0.0
+
+    for i in range(0, len(image)):
+        for j in range(0, len(image)):
+            if image[i][j] >= 0.0 and image[i][j] < 6.8:
+                yaw_image[i][j] = image[i][j] + 1
+                yaw_image = propagate_value_with_radius(yaw_image, (i, j), 2)
+
+    for i in range(0, len(image)):
+        for j in range(0, len(image)):
+            if image[i][j] >= 0.0 and image[i][j] < 6.5:
+                yaw_image[i][j] = image[i][j] + 1
+
+    yaw_image = np.around(yaw_image, decimals=4)
+            # np.set_printoptions(threshold=sys.maxsize)
+            # print(probability_map)
+            # cv2.imwrite("pdf_image.png", probability_map * 255)
+            # probability_map = np.clip(probability_map, 0, 1)
+
+
+    return yaw_image
+
 
 def get_yaw_images(directory):
 
@@ -258,13 +317,13 @@ def get_yaw_images(directory):
         for i in range(0, len(image)):
             for j in range(0, len(image)):
                 if image[i][j] >= 0.0 and image[i][j] < 6.8:
-                    yaw_image[i][j] = image[i][j]
+                    yaw_image[i][j] = image[i][j] + 1
                     yaw_image = propagate_value_with_radius(yaw_image, (i, j), 2)
 
         for i in range(0, len(image)):
             for j in range(0, len(image)):
                 if image[i][j] >= 0.0 and image[i][j] < 6.5:
-                    yaw_image[i][j] = image[i][j]
+                    yaw_image[i][j] = image[i][j] + 1
 
         yaw_image = np.around(yaw_image, decimals=4)
         # np.set_printoptions(threshold=sys.maxsize)
@@ -273,7 +332,6 @@ def get_yaw_images(directory):
         # probability_map = np.clip(probability_map, 0, 1)
 
         yaw_maps.append(yaw_image)
-
 
     return yaw_maps
 
@@ -291,7 +349,7 @@ def get_yaw_with_mask_images(directory):
     masked_maps = []
 
     for i in complete_file_paths:
-        masked_map = np.zeros((100,100), np.float32)
+        masked_map = np.zeros((100, 100), np.float32)
 
         image = cv2.imread(i, cv2.IMREAD_GRAYSCALE)
         image = image.astype(np.float32)
@@ -308,21 +366,19 @@ def get_yaw_with_mask_images(directory):
             for j in range(0, len(image)):
                 if image[i][j] >= 0.0 and image[i][j] < 6.8:
                     yaw_image[i][j] = image[i][j]
-                    yaw_image = propagate_value_with_radius(yaw_image, (i, j), 2)
                     masked_map[i][j] = 1
+                    yaw_image = propagate_value_with_radius(yaw_image, (i, j), 2)
+                    masked_map = propagate_value_with_radius(masked_map, (i, j), 2)
 
         for i in range(0, len(image)):
             for j in range(0, len(image)):
                 if image[i][j] >= 0.0 and image[i][j] < 6.5:
                     yaw_image[i][j] = image[i][j]
 
-
         yaw_image = np.around(yaw_image, decimals=4)
-
 
         yaw_maps.append(yaw_image)
         masked_maps.append(masked_map)
-
 
     return yaw_maps, masked_maps
 
@@ -337,8 +393,10 @@ def get_xy_yaw_discreet_images(directory):
         complete_file_paths.append(directory + "/" + i)
 
     yaw_maps = []
+    xy_yaw_disc_maps = []
 
     for i in complete_file_paths:
+        # print(i)
         image = cv2.imread(i, cv2.IMREAD_GRAYSCALE)
         image = image.astype(np.float32)
         image = (image / 255.0) * 8.0
@@ -355,21 +413,51 @@ def get_xy_yaw_discreet_images(directory):
                 if image[i][j] >= 0.0 and image[i][j] < 6.5:
                     yaw_image[i][j] = image[i][j]
 
-        yaw_maps.append(yaw_image)
-
-    xy_yaw_disc_maps = []
-
-    for map in yaw_maps:
         xy_yaw_disc_map = np.zeros((100, 100, 100), np.float32)
-        for i in range(0, len(map)):
-            for j in range(0, len(map)):
-                if map[i][j] >= 0.0 and map[i][j] < 6.5:
-                    depth = map[i][j] / 0.0628
+        for i in range(0, len(yaw_image)):
+            for j in range(0, len(yaw_image)):
+                if yaw_image[i][j] >= 0.0 and yaw_image[i][j] < 6.5:
+                    depth = yaw_image[i][j] / 0.0628
                     depth = round(depth)
                     if depth >= 100:
                         depth = 0
                     xy_yaw_disc_map[depth][i][j] = 1.0
-                    xy_yaw_disc_map = propagate_value_with_radius_3d(xy_yaw_disc_map, (depth, i, j), 2)
+                    xy_yaw_disc_map = propagate_value_with_radius_3d(
+                        xy_yaw_disc_map, (depth, i, j), 2
+                    )
+
+        # np_tensor = xy_yaw_disc_map
+
+        # # Mask to filter out zero values
+        # mask = np_tensor != 0
+
+        # # Get the coordinates and values of the elements that are non-zero
+        # x, y, z = np.nonzero(mask)
+        # values = np_tensor[mask]
+
+        # # Create a 3D scatter plot
+        # fig = plt.figure()
+        # ax = fig.add_subplot(111, projection='3d')
+
+        # # Create the scatter plot
+        # scatter = ax.scatter(x, y, z, c=values, cmap='viridis')
+
+        # # Add a color bar
+        # fig.colorbar(scatter, ax=ax, label='Values')
+
+        # # Set axis limits to 0-100
+        # ax.set_xlim(0, 100)
+        # ax.set_ylim(0, 100)
+        # ax.set_zlim(0, 100)
+
+        # # Set labels
+        # ax.set_xlabel('X')
+        # ax.set_ylabel('Y')
+        # ax.set_zlabel('Z')
+
+        # # Show the plot
+        # plt.show()
+
         xy_yaw_disc_maps.append(xy_yaw_disc_map)
 
     return xy_yaw_disc_maps

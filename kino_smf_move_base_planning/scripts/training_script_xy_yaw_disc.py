@@ -55,8 +55,8 @@ def train_model(model, train_loader, xy_criterion, optimizer, num_epochs=25):
 
         print(f"Epoch {epoch+1}/{num_epochs}, Loss1: {epoch_xy_loss/len(train_loader)}")
 
-        # if epoch_xy_loss / len(train_loader) < 0.024:
-        #     return model
+        if epoch_xy_loss / len(train_loader) < 0.000358:
+            return model
 
     print("Training complete")
     return model
@@ -108,9 +108,9 @@ def evaluate_model(model, test_loader, xy_criterion):
 
 # Hyperparameters and dataset setup
 
-raw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
-xy_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/path"
-yaw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation"
+raw_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
+xy_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/path"
+yaw_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation"
 
 image_paths, start_orientations, goal_orientations = get_images_and_params(
     raw_image_path
@@ -155,9 +155,9 @@ trained_model = train_model(
 )
 
 model_path = (
-    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_xy_yaw_disc.pth"
+    "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_xy_yaw_disc.pth"
 )
-torch.save(model.state_dict(), model_path)
+torch.save(trained_model.state_dict(), model_path)
 
 groundtruths, inferences = evaluate_model(trained_model, test_loader, xy_criterion)
 
@@ -165,7 +165,7 @@ groundtruths, inferences = evaluate_model(trained_model, test_loader, xy_criteri
 groundtruths = np.array(groundtruths, np.float32)
 inferences = np.array(inferences, np.float32)
 
-threshold = 0.5
+threshold = 0.1
 groundtruths = (groundtruths > threshold).astype(np.float32)
 inferences = (inferences > threshold).astype(np.float32)
 

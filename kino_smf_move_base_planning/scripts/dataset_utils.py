@@ -5,6 +5,8 @@ import cv2
 import numpy as np
 import torchvision.transforms as transforms
 import sys
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 # Define a custom dataset
 class CustomDatasetXY(Dataset):
@@ -105,6 +107,38 @@ class CustomDatasetXYYawDiscreet(Dataset):
         # print(type(self.xy_yaw_discreet_maps[idx]))
         # print(self.xy_yaw_discreet_maps[idx].shape)
         xy_yaw_disc_image = torch.from_numpy(self.xy_yaw_discreet_maps[idx])
+
+        # np_tensor = self.xy_yaw_discreet_maps[idx]
+
+        # # Mask to filter out zero values
+        # mask = np_tensor != 0
+
+        # # Get the coordinates and values of the elements that are non-zero
+        # x, y, z = np.nonzero(mask)
+        # values = np_tensor[mask]
+
+        # # Create a 3D scatter plot
+        # fig = plt.figure()
+        # ax = fig.add_subplot(111, projection='3d')
+
+        # # Create the scatter plot
+        # scatter = ax.scatter(x, y, z, c=values, cmap='viridis')
+
+        # # Add a color bar
+        # fig.colorbar(scatter, ax=ax, label='Values')
+
+        # # Set axis limits to 0-100
+        # ax.set_xlim(0, 100)
+        # ax.set_ylim(0, 100)
+        # ax.set_zlim(0, 100)
+
+        # # Set labels
+        # ax.set_xlabel('X')
+        # ax.set_ylabel('Y')
+        # ax.set_zlabel('Z')
+
+        # # Show the plot
+        # plt.show()
         
 
         if self.transform:

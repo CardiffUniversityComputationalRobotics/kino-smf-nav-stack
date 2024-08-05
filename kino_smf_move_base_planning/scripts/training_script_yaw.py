@@ -7,11 +7,11 @@ import numpy as np
 from dataset_utils import CustomDatasetYaw
 from cnn_model import YawCNN
 
-from utils import get_images_and_params, get_yaw_images
+from utils import get_images_and_params_yaw, get_yaw_images
 import sys
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-
-
+import cv2
+import time
 torch.cuda.empty_cache()
 
 
@@ -40,6 +40,15 @@ def train_model(model, train_loader, yaw_criterion, optimizer, num_epochs=25):
                 start_orientations.to(device),
                 goal_orientations.to(device),
             )
+
+            # image_input = inputs[3][0].squeeze().cpu().numpy()
+            # cv2.imwrite("input_image.png", image_input / 7 * 255)
+            # print("printing")
+
+            # image_groundtruth = yaw_groundtruth[3][0].squeeze().cpu().numpy()
+            # cv2.imwrite("groundtruth_image.png", image_groundtruth/ 6.28 * 255)
+
+            # time.sleep(2)
 
             optimizer.zero_grad()
             yaw_inference = model(
@@ -92,7 +101,7 @@ def evaluate_model(model, test_loader, yaw_criterion):
 
             yaw_inference = model(
                 inputs, robot_size, start_orientations, goal_orientations
-            )
+            ) 
 
             groundtruths.extend(yaw_groundtruth.flatten().cpu().numpy())
             inferences.extend(yaw_inference.flatten().cpu().numpy())
@@ -108,10 +117,10 @@ def evaluate_model(model, test_loader, yaw_criterion):
 
 # Hyperparameters and dataset setup
 
-raw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
-yaw_image_path = "/home/sasm/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation"
+raw_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
+yaw_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation"
 
-image_paths, start_orientations, goal_orientations = get_images_and_params(
+image_paths, yaw_maps, start_orientations, goal_orientations = get_images_and_params_yaw(
     raw_image_path
 )
 
@@ -119,7 +128,7 @@ start_orientations = np.array(start_orientations).astype(np.float32)
 goal_orientations = np.array(goal_orientations).astype(np.float32)
 robot_sizes = np.array([0.35] * len(image_paths)).astype(np.float32)
 
-yaw_maps = get_yaw_images(yaw_image_path)
+# yaw_maps = get_yaw_images(yaw_image_path)
 
 transform = transforms.Compose([transforms.Resize((100, 100)), transforms.ToTensor()])
 
@@ -147,7 +156,7 @@ model = YawCNN().to(device)
 
 yaw_criterion = nn.MSELoss()
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
 
 
 trained_model = train_model(
@@ -155,9 +164,9 @@ trained_model = train_model(
 )
 
 model_path = (
-    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_yaw.pth"
+    "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/trained_model/model_yaw_0.001.pth"
 )
-torch.save(model.state_dict(), model_path)
+torch.save(trained_model.state_dict(), model_path)
 
 groundtruths, inferences = evaluate_model(trained_model, test_loader, yaw_criterion)
 
