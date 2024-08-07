@@ -13,12 +13,12 @@ import sys
 
 # Initialize the model
 loaded_model = YawCNN()
-model_path = (
-    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_yaw.pth"
-)
+model_path = "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/trained_model/model_yaw_0.01_final.pth"
 
 # Load the state dictionary into the model
-loaded_model.load_state_dict(torch.load(model_path))
+# loaded_model.load_state_dict(torch.load(model_path))
+
+loaded_model = torch.jit.load(model_path)
 
 # Move the model to the appropriate device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -68,10 +68,10 @@ def preprocess_attributes(robot_size, start_orientation, goal_orientation):
 
 # Example file path and attributes
 # image_path = "/home/sasm/test_dataset/test/2024-07-19_18-33-45_-2.191234_-2.425865.png"
-image_path = "/home/sasm/Downloads/dataset_23_07/dataset/test/2024-07-19_19-24-20_-0.010632_0.818877.png"
+image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test/2024-07-31_10-19-15_5.656696_6.142820.png"
 robot_size = 0.35
-start_orientation = -0.01
-goal_orientation = 0.81
+start_orientation = 5.657
+goal_orientation = 6.143
 
 # Preprocess inputs
 image = preprocess_image(image_path).to(device)

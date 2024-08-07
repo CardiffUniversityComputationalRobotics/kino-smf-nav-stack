@@ -157,7 +157,7 @@ model = XYCNN().to(device)
 
 xy_criterion = nn.BCELoss()
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
 
 trained_model = train_model(
@@ -165,9 +165,14 @@ trained_model = train_model(
 )
 
 model_path = (
-    "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_xy.pth"
+    "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_xy_0.0001_final.pth"
 )
-torch.save(trained_model.state_dict(), model_path)
+
+model_scripted = torch.jit.script(trained_model) 
+
+model_scripted.save(model_path)
+
+# torch.save(trained_model.state_dict(), model_path)
 
 groundtruths, inferences = evaluate_model(trained_model, test_loader, xy_criterion)
 

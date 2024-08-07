@@ -6,6 +6,7 @@ from torchvision.models import ResNet50_Weights
 import torchvision
 import math
 
+
 # Define ASPP module
 class ASPP(nn.Module):
     def __init__(self, in_channels, out_channels, atrous_rates):
@@ -192,19 +193,21 @@ class SingleFullyConnectedNN(nn.Module):
 
         return fla, fha
 
+
 class MultiLayerFCN(nn.Module):
     def __init__(self):
         super(MultiLayerFCN, self).__init__()
         self.fc1 = nn.Linear(9728, 512)  # First layer
-        self.fc2 = nn.Linear(512, 128)   # Second layer
-        self.fc3 = nn.Linear(128, 1)     # Final layer producing a single output
+        self.fc2 = nn.Linear(512, 128)  # Second layer
+        self.fc3 = nn.Linear(128, 1)  # Final layer producing a single output
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))  # ReLU activation after first layer
         x = torch.relu(self.fc2(x))  # ReLU activation after second layer
-        x = self.fc3(x)              # No activation for the final layer
+        x = self.fc3(x)  # No activation for the final layer
         return x
-    
+
+
 class MaskedCircularLoss(nn.Module):
     def __init__(self):
         super(MaskedCircularLoss, self).__init__()
@@ -212,4 +215,48 @@ class MaskedCircularLoss(nn.Module):
     def forward(self, predictions, targets, mask):
         diff = (predictions - targets + math.pi) % (2 * math.pi) - math.pi
         masked_diff = diff * mask
-        return torch.mean(masked_diff ** 2)
+        return torch.mean(masked_diff**2)
+
+
+class MaskedCircularLossMod(nn.Module):
+    def __init__(self):
+        super(MaskedCircularLossMod, self).__init__()
+
+    def forward(self, predictions, targets, mask):
+        """
+        Arguments:
+        predictions -- tensor of predicted values (angles), expected shape (N, )
+        targets -- tensor of target values (angles), expected shape (N, )
+        mask -- binary tensor indicating which elements to consider in the loss calculation, expected shape (N, )
+        """
+        # Ensure the predictions, targets, and mask are all on the same device
+        predictions = predictions.to(targets.device)
+        mask = mask.to(targets.device)
+
+        # Compute the raw circular difference
+        diff = torch.abs(predictions - targets) % (2 * torch.pi)
+
+        # Adjust differences greater than π
+        circular_diff = torch.where(diff > torch.pi, 2 * torch.pi - diff, diff)
+
+        # Apply the mask
+        masked_diff = circular_diff * mask
+
+        # Compute the mean loss over the valid (masked) elements
+        loss = masked_diff.sum() / mask.sum()
+
+        return loss
+
+
+class CircularLossMod(nn.Module):
+    def __init__(self):
+        super(CircularLossMod, self).__init__()
+
+    def forward(self, predictions, targets):
+        predictions = predictions.to(targets.device)
+        range_max = 1 + 2 * torch.pi
+        half_range = 2 * torch.pi / 2 + 1
+        diff = torch.abs(predictions - targets) % range_max
+        circular_diff = torch.where(diff > half_range, range_max - diff, diff)
+        loss = circular_diff.mean()
+        return loss

@@ -156,7 +156,7 @@ model = YawCNN().to(device)
 
 yaw_criterion = nn.MSELoss()
 
-optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
 
 
 trained_model = train_model(
@@ -164,9 +164,13 @@ trained_model = train_model(
 )
 
 model_path = (
-    "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/trained_model/model_yaw_0.001.pth"
+    "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/trained_model/model_yaw_0.1_final.pth"
 )
-torch.save(trained_model.state_dict(), model_path)
+model_scripted = torch.jit.script(trained_model) 
+
+model_scripted.save(model_path)
+
+# torch.save(trained_model.state_dict(), model_path)
 
 groundtruths, inferences = evaluate_model(trained_model, test_loader, yaw_criterion)
 

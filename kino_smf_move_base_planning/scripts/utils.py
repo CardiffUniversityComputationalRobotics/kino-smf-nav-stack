@@ -4,7 +4,8 @@ import numpy as np
 import sys
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-
+from model_primitives import MaskedCircularLoss
+import torch
 
 def list_files_in_directory(directory):
 
@@ -61,6 +62,29 @@ def get_images_and_params_yaw(directory):
 
     return complete_file_paths, yaw_images, start_orientation, goal_orientation
 
+def get_images_and_params_yaw_mask(directory):
+
+    filenames = list_files_in_directory(directory)
+
+
+    complete_file_paths = []
+    yaw_images = []
+    start_orientation = []
+    goal_orientation = []
+    yaw_masks = []
+
+    for i in filenames:
+        complete_file_paths.append(directory + "/" + i)
+        split_name = i.split("_")
+        start_orientation.append(float(round(float(split_name[2]), 3)))
+        goal_orientation.append(float(round(float(split_name[-1][:-5]), 3)))
+
+        yaw_image, mask_image = get_yaw_with_mask_image(directory + "/../train/orientation/" + i[:-4] + "yaw.png")
+
+        yaw_images.append(yaw_image)
+        yaw_masks.append(mask_image)
+
+    return complete_file_paths, yaw_images, yaw_masks, start_orientation, goal_orientation
 
 def get_images_yaw_and_params(map_directory, orientation_directory):
 
@@ -278,7 +302,7 @@ def get_yaw_image(directory):
 
     for i in range(0, len(image)):
         for j in range(0, len(image)):
-            if image[i][j] >= 0.0 and image[i][j] < 6.5:
+            if image[i][j] >= 0.0 and image[i][j] < 6.8:
                 yaw_image[i][j] = image[i][j] + 1
 
     yaw_image = np.around(yaw_image, decimals=4)
@@ -335,8 +359,55 @@ def get_yaw_images(directory):
 
     return yaw_maps
 
+def get_yaw_with_mask_image(directory):
+
+    # loss = MaskedCircularLoss()
+
+    masked_map = np.zeros((100, 100), np.float32)
+
+    image = cv2.imread(directory, cv2.IMREAD_GRAYSCALE)
+    image = image.astype(np.float32)
+    image = (image / 255.0) * 8.0
+
+    yaw_image = np.copy(image)
+
+    # test_yaw_image = np.full((100, 100), 0)
+
+    for i in range(0, len(image)):
+        for j in range(0, len(image)):
+            if 6.8 < image[i][j] < 7.2:
+                yaw_image[i][j] = 0.0
+
+    for i in range(0, len(image)):
+        for j in range(0, len(image)):
+            if image[i][j] >= 0.0 and image[i][j] < 6.8:
+                yaw_image[i][j] = image[i][j]
+                # test_yaw_image[i][j] = 10
+                masked_map[i][j] = 1
+                yaw_image = propagate_value_with_radius(yaw_image, (i, j), 2)
+                masked_map = propagate_value_with_radius(masked_map, (i, j), 2)
+                # test_yaw_image = propagate_value_with_radius(test_yaw_image, (i, j), 2)
+
+    for i in range(0, len(image)):
+        for j in range(0, len(image)):
+            if image[i][j] >= 0.0 and image[i][j] < 6.5:
+                yaw_image[i][j] = image[i][j]
+                # test_yaw_image[i][j] = 10
+
+    yaw_image = np.around(yaw_image, decimals=4)
+
+    # test_yaw_image = np.around(test_yaw_image, decimals=4)
+
+    # np.set_printoptions(threshold=sys.maxsize)
+    # print(yaw_image)
+
+    # print(loss(torch.tensor(test_yaw_image), torch.tensor(yaw_image), torch.tensor(masked_map)).item())
+
+    return yaw_image, masked_map
 
 def get_yaw_with_mask_images(directory):
+
+    
 
     filenames = list_files_in_directory(directory)
 
@@ -357,6 +428,8 @@ def get_yaw_with_mask_images(directory):
 
         yaw_image = np.copy(image)
 
+        
+
         for i in range(0, len(image)):
             for j in range(0, len(image)):
                 if 6.8 < image[i][j] < 7.2:
@@ -366,15 +439,17 @@ def get_yaw_with_mask_images(directory):
             for j in range(0, len(image)):
                 if image[i][j] >= 0.0 and image[i][j] < 6.8:
                     yaw_image[i][j] = image[i][j]
+                    
                     masked_map[i][j] = 1
                     yaw_image = propagate_value_with_radius(yaw_image, (i, j), 2)
+                    
                     masked_map = propagate_value_with_radius(masked_map, (i, j), 2)
 
         for i in range(0, len(image)):
             for j in range(0, len(image)):
                 if image[i][j] >= 0.0 and image[i][j] < 6.5:
                     yaw_image[i][j] = image[i][j]
-
+                    
         yaw_image = np.around(yaw_image, decimals=4)
 
         yaw_maps.append(yaw_image)

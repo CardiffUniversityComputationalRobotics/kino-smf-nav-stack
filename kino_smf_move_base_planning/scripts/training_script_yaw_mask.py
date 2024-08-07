@@ -6,12 +6,13 @@ import numpy as np
 
 from dataset_utils import CustomDatasetYawMasked
 from cnn_model import YawCNN
-from model_primitives import MaskedCircularLoss
+from model_primitives import MaskedCircularLossMod
 
-from utils import get_images_and_params, get_yaw_with_mask_images
+from utils import get_images_and_params_yaw_mask, get_yaw_with_mask_images
 import sys
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import cv2
+import time
 
 torch.cuda.empty_cache()
 
@@ -45,15 +46,17 @@ def train_model(model, train_loader, yaw_criterion, optimizer, num_epochs=25):
                 goal_orientations.to(device),
             )
 
-            image_input = inputs[3][0].squeeze().cpu().numpy()
-            cv2.imwrite("input_image.png", image_input / 7 * 255)
-            print("printing")
+            # image_input = inputs[3][0].squeeze().cpu().numpy()
+            # cv2.imwrite("input_image.png", image_input / 7 * 255)
+            # print("printing")
 
-            image_groundtruth = yaw_groundtruth[3][0].squeeze().cpu().numpy()
-            cv2.imwrite("groundtruth_image.png", image_groundtruth / 7 * 255)
+            # image_groundtruth = yaw_groundtruth[3][0].squeeze().cpu().numpy()
+            # cv2.imwrite("groundtruth_image.png", image_groundtruth / 7 * 255)
 
-            yaw_groundtruth = inputs[3][0].squeeze().cpu().numpy()
-            cv2.imwrite("mask.png", yaw_groundtruth / 7 * 255)
+            # image_mask = masked_maps[3][0].squeeze().cpu().numpy()
+            # cv2.imwrite("mask.png", image_mask * 255)
+
+            # time.sleep(3)
 
             optimizer.zero_grad()
             yaw_inference = model(
@@ -128,15 +131,13 @@ def evaluate_model(model, test_loader, yaw_criterion):
 raw_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
 yaw_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation"
 
-image_paths, start_orientations, goal_orientations = get_images_and_params(
+image_paths, yaw_maps, masked_maps, start_orientations, goal_orientations = get_images_and_params_yaw_mask(
     raw_image_path
 )
 
 start_orientations = np.array(start_orientations).astype(np.float32)
 goal_orientations = np.array(goal_orientations).astype(np.float32)
 robot_sizes = np.array([0.35] * len(image_paths)).astype(np.float32)
-
-yaw_maps, masked_maps = get_yaw_with_mask_images(yaw_image_path)
 
 transform = transforms.Compose([transforms.Resize((100, 100)), transforms.ToTensor()])
 
@@ -163,19 +164,23 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = YawCNN().to(device)
 
-yaw_criterion = MaskedCircularLoss()
+yaw_criterion = MaskedCircularLossMod()
 
-optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-
+optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
 
 trained_model = train_model(
     model, train_loader, yaw_criterion, optimizer, num_epochs=2000
 )
 
 model_path = (
-    "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_yaw_mask_.pth"
+    "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_yaw_mask_0.1_mod_loss_final.pth"
 )
-torch.save(trained_model.state_dict(), model_path)
+
+model_scripted = torch.jit.script(trained_model) 
+
+model_scripted.save(model_path)
+
+# torch.save(trained_model.state_dict(), model_path)
 
 groundtruths, inferences = evaluate_model(trained_model, test_loader, yaw_criterion)
 
