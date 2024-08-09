@@ -1,11 +1,26 @@
 cmake_minimum_required(VERSION 3.8)
 project(kino_smf_move_base_planning)
 
+# Set compiler options
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# find dependencies
+# Set CUDA paths
+set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda-11.8)
+set(CMAKE_CUDA_COMPILER /usr/local/cuda-11.8/bin/nvcc)
+set(CUDACXX /usr/local/cuda-11.8/bin/nvcc)
+link_directories(/usr/local/cuda-11.8/lib64)
+
+# Ensure CUDA is found and configured
+find_package(CUDA REQUIRED)
+include_directories(${CUDA_INCLUDE_DIRS})
+
+# Set Torch path
+set(Torch_DIR "/home/sasm/libtorch-cxx11-abi-shared-with-deps-2.4.0+cu118/libtorch/share/cmake/Torch")
+find_package(Torch REQUIRED)
+
+# Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -24,22 +39,21 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(ompl REQUIRED)
 find_package(geometry_msgs REQUIRED)
 
+# Include directories
 include_directories(
   include
-  SYSTEM)
+  SYSTEM
+)
 
+# Handle testing
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
-  # the following line skips the linter which checks for copyrights
-  # comment the line when a copyright and license is added to all source files
   set(ament_cmake_copyright_FOUND TRUE)
-  # the following line skips cpplint (only works in a git repo)
-  # comment the line when this package is in a git repo and when
-  # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
 
+# Set dependencies for ament_target_dependencies
 set(dependencies
     rclcpp
     pedsim_msgs
@@ -52,23 +66,34 @@ set(dependencies
     OMPL
 )
 
+# Add executable
 add_executable(kino_smf_move_base_planner
-src/planning_framework_main.cpp
-src/planner/RRTstarMod.cpp
-src/planner/SSTMod.cpp
-src/sampler/PathLengthDirectInfSamplerMod.cpp
-src/state_validity_checker_grid_map_R2.cpp
-src/local_state_validity_checker_grid_map_SE2.cpp
-src/new_state_sampler.cpp
-src/informed_new_state_sampler.cpp
-src/state_cost_objective.cpp
-src/kinematic_diff_model.cpp
+  src/planning_framework_main.cpp
+  src/planner/RRTstarMod.cpp
+  src/planner/SSTMod.cpp
+  src/sampler/PathLengthDirectInfSamplerMod.cpp
+  src/state_validity_checker_grid_map_R2.cpp
+  src/local_state_validity_checker_grid_map_SE2.cpp
+  src/new_state_sampler.cpp
+  src/informed_new_state_sampler.cpp
+  src/state_cost_objective.cpp
+  src/kinematic_diff_model.cpp
 )
-ament_target_dependencies(kino_smf_move_base_planner ${dependencies})
-target_link_libraries(kino_smf_move_base_planner ${OMPL_LIBRARIES})
 
+# Link libraries
+ament_target_dependencies(kino_smf_move_base_planner ${dependencies})
+target_link_libraries(kino_smf_move_base_planner ${OMPL_LIBRARIES} ${TORCH_LIBRARIES} ${CUDA_LIBRARIES})
+
+# Set runtime path for CUDA libraries
+set_target_properties(kino_smf_move_base_planner PROPERTIES
+    BUILD_RPATH_USE_ORIGIN TRUE
+    BUILD_RPATH "/usr/local/cuda-11.8/lib64"
+)
+
+# Install targets
 install(TARGETS
   kino_smf_move_base_planner
   DESTINATION lib/${PROJECT_NAME})
 
+# ROS 2 package setup
 ament_package()

@@ -70,6 +70,12 @@
 #include <pedsim_msgs/msg/agent_states.hpp>
 #include <pedsim_msgs/msg/agent_state.hpp>
 
+// gridmap imports
+#include <grid_map_ros/grid_map_ros.hpp>
+#include "grid_map_cv/GridMapCvConverter.hpp"
+
+#include <torch/script.h>
+
 namespace ob = ompl::base;
 namespace og = ompl::geometric;
 namespace oc = ompl::control;
@@ -159,6 +165,15 @@ private:
 
     nav_msgs::msg::Odometry::SharedPtr odom_data_;
     geometry_msgs::msg::Twist current_robot_velocity_;
+
+    double local_goal_yaw_;
+
+    // ! learning model use parameters
+    bool use_position_cnn_;
+    bool use_orientation_cnn_;
+    // chances
+    double rejection_chance_;
+    double orientation_chance_;
 };
 
 //!  Constructor.
@@ -218,6 +233,12 @@ OnlinePlannFramework::OnlinePlannFramework()
     this->declare_parameter("grid_map_service", rclcpp::ParameterValue(std::string("grid_map_service")));
     this->declare_parameter("local_use_social_heatmap", rclcpp::ParameterValue(true));
 
+    // learning model use parameters
+    this->declare_parameter("use_position_cnn", rclcpp::ParameterValue(false));
+    this->declare_parameter("use_orientation_cnn", rclcpp::ParameterValue(false));
+    this->declare_parameter("rejection_chance", rclcpp::ParameterValue(0.5));
+    this->declare_parameter("orientation_chance", rclcpp::ParameterValue(0.5));
+
     // ! GET PARAMETERS
     world_frame_ = this->get_parameter("world_frame").as_string();
     planning_bounds_x_ = this->get_parameter("planning_bounds_x").as_double_array();
@@ -250,6 +271,12 @@ OnlinePlannFramework::OnlinePlannFramework()
     max_rot_vel_ = this->get_parameter("max_rot_vel").as_double();
     grid_map_service_ = this->get_parameter("grid_map_service").as_string();
     local_use_social_heatmap_ = this->get_parameter("local_use_social_heatmap").as_bool();
+
+    use_position_cnn_ = this->get_parameter("use_position_cnn").as_bool();
+    use_orientation_cnn_ = this->get_parameter("use_orientation_cnn").as_bool();
+    // chances
+    rejection_chance_ = this->get_parameter("rejection_chance").as_double();
+    orientation_chance_ = this->get_parameter("orientation_chance").as_double();
 
     start_state_.resize(3);
 
@@ -304,7 +331,7 @@ OnlinePlannFramework::OnlinePlannFramework()
     //=======================================================================
     // ! Waiting for odometry
     //=======================================================================
-    rclcpp::Rate loop_rate(10);
+    rclcpp::Rate loop_rate(5);
     while (rclcpp::ok() && !odom_available_)
     {
         rclcpp::spin_some(this->get_node_base_interface());
@@ -778,12 +805,25 @@ void OnlinePlannFramework::planWithSimpleSetup()
 
     rclcpp::Rate loop_rate(1.0 / (timer_period_ - solving_time_)); // 10 hz
     // goal_available_ = true;
+
+    // ! loading torchscript model
+    torch::jit::script::Module module;
+    try
+    {
+        module = torch::jit::load("/home/sasm/trained_model/model_yaw_0.1_final_artifact_mse.pth");
+    }
+    catch (const c10::Error &e)
+    {
+        RCLCPP_ERROR(this->get_logger(), "Error loading the model");
+        return;
+    }
+
     while (rclcpp::ok())
     {
+        rclcpp::spin_some(this->get_node_base_interface());
         if (goal_available_)
             RCLCPP_INFO(this->get_logger(), "goal available");
         OnlinePlannFramework::planningTimerCallback();
-        rclcpp::spin_some(this->get_node_base_interface());
         // loop_rate.sleep();
     }
 }
@@ -1127,6 +1167,8 @@ void OnlinePlannFramework::planningTimerCallback()
                     new_goal_local->setThreshold(local_goal_radius_);
                     simple_setup_local_->setGoal(ob::GoalPtr(new_goal_local));
                 }
+
+                local_goal_yaw_ = local_goal[2];
 
                 if (dynamic_bounds_)
                 {
