@@ -38,13 +38,30 @@ public:
     ob::PlannerPtr planner_;
     std::vector<ob::State *> start_states_;
 
+    // cnn usage
+    bool use_position_cnn_;
+    bool use_orientation_cnn_;
+    double rejection_chance_;
+    double orientation_chance_;
+    grid_map::GridMap inferences_;
+    std::vector<double> start_;
+
     SocialComfortObjective(const ob::SpaceInformationPtr &si,
                            bool enableMotionCostInterpolation, const ob::StateSpacePtr &space, const ob::PlannerPtr &planner,
-                           const std::vector<const ob::State *> &start_states)
+                           const std::vector<const ob::State *> &start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, grid_map::GridMap inferences, std::vector<double> start)
         : ob::StateCostIntegralObjective(si, enableMotionCostInterpolation)
     {
         space_ = si_->getStateSpace();
         planner_ = planner;
+
+        // cnn usage
+        use_position_cnn_ = use_position_cnn;
+        use_orientation_cnn_ = use_orientation_cnn;
+        rejection_chance_ = rejection_chance;
+        orientation_chance_ = orientation_chance;
+        inferences_ = inferences;
+
+        start_ = start;
 
         for (int i = 0; i < start_states.size(); i++)
         {
@@ -117,7 +134,7 @@ public:
         // Make the direct path-length informed sampler and return. If OMPL was compiled with Eigen, a direct
         // version is available, if not a rejection-based technique can be used
 
-        return std::make_shared<ob::PathLengthDirectInfSamplerMod>(probDefn, maxNumberCalls, space_, planner_, start_states_);
+        return std::make_shared<ob::PathLengthDirectInfSamplerMod>(probDefn, maxNumberCalls, space_, planner_, start_states_, use_position_cnn_, use_orientation_cnn_, rejection_chance_, orientation_chance_, inferences_, start_);
     }
 };
 
@@ -194,7 +211,7 @@ public:
     away from social agents according to an extended social comfort model */
 ob::OptimizationObjectivePtr getSocialComfortObjective(const ob::SpaceInformationPtr &si,
                                                        bool motion_cost_interpolation, const ob::StateSpacePtr &space, const ob::PlannerPtr &planner,
-                                                       const std::vector<const ob::State *> &start_states);
+                                                       const std::vector<const ob::State *> &start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, grid_map::GridMap inferences, std::vector<double> start);
 
 /** Return an optimization objective which attempts to steer the robot
     away from social agents according to a costmap provided by a world modeling module */

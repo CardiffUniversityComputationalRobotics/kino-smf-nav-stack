@@ -43,6 +43,8 @@
 // For std::list
 #include <list>
 
+#include <grid_map_ros/grid_map_ros.hpp>
+
 namespace ompl
 {
     namespace base
@@ -51,7 +53,7 @@ namespace ompl
         {
         public:
             PathLengthDirectInfSamplerMod(const ProblemDefinitionPtr &probDefn, unsigned int maxNumberCalls, const StateSpacePtr space, const PlannerPtr &planner,
-                                          const std::vector<State *> solution_start_states);
+                                          const std::vector<State *> solution_start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, grid_map::GridMap inferences, std::vector<double> start);
             ~PathLengthDirectInfSamplerMod() override;
 
             bool sampleUniform(State *statePtr, const Cost &maxCost) override;
@@ -65,6 +67,12 @@ namespace ompl
             Cost heuristicSolnCost(const State *statePtr) const override;
 
             void getNextSample(State *state);
+
+            bool checkXYInference(double x, double y, std::vector<double> start);
+
+            double getSampleYaw(double x, double y, std::vector<double> start);
+
+            double wrapAngle(double angle);
 
         private:
             using ProlateHyperspheroidCPtr = std::shared_ptr<const ompl::ProlateHyperspheroid>;
@@ -112,6 +120,18 @@ namespace ompl
             StateSamplerPtr uninformedSubSampler_;
 
             std::vector<State *> solution_start_states_;
+
+            // cnn usage
+            bool use_position_cnn_;
+            bool use_orientation_cnn_;
+            double rejection_chance_;
+            double orientation_chance_;
+            grid_map::GridMap inferences_;
+
+            grid_map::Matrix xy_inference_;
+            grid_map::Matrix yaw_inference_;
+
+            std::vector<double> start_;
 
             RNG rng_;
         }; // PathLengthDirectInfSamplerMod

@@ -57,7 +57,7 @@ namespace ompl
         // The direct ellipsoid sampling class for path-length:
         PathLengthDirectInfSamplerMod::PathLengthDirectInfSamplerMod(const ProblemDefinitionPtr &probDefn,
                                                                      unsigned int maxNumberCalls, const StateSpacePtr space, const PlannerPtr &planner,
-                                                                     const std::vector<State *> solution_start_states)
+                                                                     const std::vector<State *> solution_start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, grid_map::GridMap inferences, std::vector<double> start)
             : InformedSampler(probDefn, maxNumberCalls), informedIdx_(0u), uninformedIdx_(0u)
         {
             // Variables
@@ -72,6 +72,25 @@ namespace ompl
 
             // IF USING REUSE OF LAST BEST KNOWN SOLUTION THEN SOLUTION START STATES ARE GOTTEN
             solution_start_states_ = solution_start_states;
+
+            // CNN USAGE
+
+            use_position_cnn_ = use_position_cnn;
+            use_orientation_cnn_ = use_orientation_cnn;
+            rejection_chance_ = rejection_chance;
+            orientation_chance_ = orientation_chance;
+            inferences_ = inferences;
+
+            start_ = start;
+
+            if (use_position_cnn_)
+            {
+                xy_inference_ = inferences_["xy_inference"];
+            }
+            if (use_orientation_cnn_)
+            {
+                yaw_inference_ = inferences_["yaw_inference"];
+            }
 
             if (!probDefn_->getGoal()->hasType(ompl::base::GOAL_SAMPLEABLE_REGION))
             {
@@ -262,8 +281,86 @@ namespace ompl
             {
                 // OMPL_INFORM("REGULAR SAMPLING GOING");
                 // Call the sampleUniform helper function with my iteration counter:
-                return sampleUniform(statePtr, maxCost, &iter);
+
+                bool found_sample = sampleUniform(statePtr, maxCost, &iter);
+
+                auto *sample = statePtr->as<ompl::base::SE2StateSpace::StateType>();
+
+                // std::cout << "#####################################" << std::endl;
+                // std::cout << sample->getX() << std::endl;
+                // std::cout << sample->getY() << std::endl;
+                // std::cout << sample->getYaw() << std::endl;
+
+                if (use_position_cnn_)
+                {
+                    double rand_pos = rng_.uniform01();
+                    if (rand_pos < rejection_chance_)
+                    {
+                        // check if sample should be rejected
+
+                        if (!checkXYInference(sample->getX(), sample->getY(), start_))
+                        {
+                            return false;
+                        }
+
+                        if (use_orientation_cnn_)
+                        {
+                            // check if orientation should be obtained and then get the angle
+                            double rand_orient = rng_.uniform01();
+                            if (rand_orient < orientation_chance_)
+                            {
+                                double angle = getSampleYaw(sample->getX(), sample->getY(), start_);
+                                statePtr->as<ompl::base::SE2StateSpace::StateType>()->setYaw(angle);
+                            }
+                        }
+                        return found_sample;
+                    }
+                }
+
+                return found_sample;
             }
+        }
+
+        bool PathLengthDirectInfSamplerMod::checkXYInference(double x, double y, std::vector<double> start)
+        {
+            grid_map::Position query(x - start[0], y - start[1]);
+
+            grid_map::Index index;
+
+            if (inferences_.getIndex(query, index))
+            {
+                if (xy_inference_(index(0), index(1)) > 0.5)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        double PathLengthDirectInfSamplerMod::getSampleYaw(double x, double y, std::vector<double> start)
+        {
+
+            grid_map::Position query(x - start[0], y - start[1]);
+
+            grid_map::Index index;
+
+            double angle;
+
+            if (inferences_.getIndex(query, index))
+            {
+                angle = wrapAngle(yaw_inference_(index(0), index(1)) - 1);
+            }
+
+            return angle;
+        }
+
+        double PathLengthDirectInfSamplerMod::wrapAngle(double angle)
+        {
+            angle = fmod(angle + M_PI, 2.0 * M_PI);
+            if (angle < 0)
+                angle += 2.0 * M_PI;
+            return angle - M_PI;
         }
 
         bool PathLengthDirectInfSamplerMod::sampleUniform(State *statePtr, const Cost &minCost, const Cost &maxCost)
@@ -693,4 +790,4 @@ namespace ompl
             return numInclusions;
         }
     }; // base
-};     // ompl
+}; // ompl

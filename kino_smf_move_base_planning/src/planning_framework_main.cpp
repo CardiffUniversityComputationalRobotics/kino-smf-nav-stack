@@ -72,7 +72,7 @@
 
 // gridmap imports
 #include <grid_map_ros/grid_map_ros.hpp>
-#include "grid_map_cv/GridMapCvConverter.hpp"
+#include <grid_map_core/TypeDefs.hpp>
 
 #include <torch/script.h>
 
@@ -116,12 +116,22 @@ public:
     double calculateAngle(double x1, double y1, double x2, double y2);
     //! get a new valid goal candidate according to the provided goal
     ob::GoalStates *findNewGoalCandidate(const ob::ScopedState<> &goal_candidate);
+    //! Callback for getting relevant agents
+    void relevantAgentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agents_msg);
+    //! generate input for network
+    std::vector<torch::jit::IValue> getLocalInputs(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map_msg);
+    //! gridmap to tensor
+    torch::Tensor gridMapToTensor(const grid_map::Matrix &matrix);
+    grid_map::Matrix tensorToGridMapMatrix(const at::Tensor &tensor);
+    std::vector<torch::jit::IValue> prepareInputs(const grid_map::Matrix &matrix, double robot_size, double start_yaw, double goal_yaw, torch::Device device);
+    double wrapAngle(double angle);
 
 private:
     // ! SUBSCRIBERS
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr control_active_sub_;
+    rclcpp::Subscription<pedsim_msgs::msg::AgentStates>::SharedPtr relevant_agents_sub_;
 
     // ! PUBLISHERS
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr solution_path_rviz_pub_;
@@ -165,6 +175,7 @@ private:
 
     nav_msgs::msg::Odometry::SharedPtr odom_data_;
     geometry_msgs::msg::Twist current_robot_velocity_;
+    pedsim_msgs::msg::AgentStates::SharedPtr relevant_agents_;
 
     double local_goal_yaw_;
 
@@ -174,6 +185,10 @@ private:
     // chances
     double rejection_chance_;
     double orientation_chance_;
+    // ! models
+
+    torch::jit::script::Module xy_module_;
+    torch::jit::script::Module yaw_module_;
 };
 
 //!  Constructor.
@@ -297,6 +312,9 @@ OnlinePlannFramework::OnlinePlannFramework()
 
     // Controller active flag
     // control_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(control_active_topic_, 1, std::bind(&OnlinePlannFramework::controlActiveCallback, this, std::placeholders::_1));
+
+    // relevant agents
+    relevant_agents_sub_ = this->create_subscription<pedsim_msgs::msg::AgentStates>("relevant_agents", 1, std::bind(&OnlinePlannFramework::relevantAgentsCallback, this, std::placeholders::_1));
 
     //=======================================================================
     // ! Publishers
@@ -499,6 +517,15 @@ void OnlinePlannFramework::odomCallback(const nav_msgs::msg::Odometry::SharedPtr
     odom_data_ = odom_msg;
 }
 
+//! Relevant agents callback.
+/*!
+ * Callback for getting relevant agents used for the mapping
+ */
+void OnlinePlannFramework::relevantAgentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agents_msg)
+{
+    relevant_agents_ = agents_msg;
+}
+
 //! Control active callback.
 /*!
  * Callback for getting the state of the Smf base controller
@@ -597,6 +624,34 @@ void OnlinePlannFramework::planWithSimpleSetup()
     std_msgs::msg::Bool make_sweep;
     make_sweep.data = true;
     sweep_motion_pub_->publish(make_sweep);
+
+    // ! loading torchscript model
+
+    if (use_position_cnn_)
+    {
+        try
+        {
+            xy_module_ = torch::jit::load("/home/sasm/trained_model/model_xy_0.001_final.pth");
+        }
+        catch (const c10::Error &e)
+        {
+            RCLCPP_ERROR(this->get_logger(), "Error loading the position model");
+            return;
+        }
+    }
+
+    if (use_orientation_cnn_)
+    {
+        try
+        {
+            yaw_module_ = torch::jit::load("/home/sasm/trained_model/model_yaw_0.1_final_artifact_mse.pth");
+        }
+        catch (const c10::Error &e)
+        {
+            RCLCPP_ERROR(this->get_logger(), "Error loading the orientation model");
+            return;
+        }
+    }
 
     //=======================================================================
     // ! Instantiate the state space
@@ -782,12 +837,15 @@ void OnlinePlannFramework::planWithSimpleSetup()
     // !OPTIMIZATION OBJECTIVE FOR LOCAL PLANNER
 
     std::vector<const ob::State *> dummy_global_path_feedback;
+    grid_map::GridMap dummy_grid_map;
+
+    std::vector<double> dummy_start;
 
     if (local_optimization_objective_.compare("PathLength") == 0) // path length Objective
         simple_setup_local_->getProblemDefinition()->setOptimizationObjective(getPathLengthObjective(si_local));
     else if (local_optimization_objective_.compare("SocialComfort") == 0) // Social Comfort
         simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
-            getSocialComfortObjective(si_local, motion_cost_interpolation_, local_space, simple_setup_local_->getPlanner(), dummy_global_path_feedback));
+            getSocialComfortObjective(si_local, motion_cost_interpolation_, local_space, simple_setup_local_->getPlanner(), dummy_global_path_feedback, use_position_cnn_, use_orientation_cnn_, rejection_chance_, orientation_chance_, dummy_grid_map, dummy_start));
     else if (local_optimization_objective_.compare("SocialHeatmap") == 0) // Social Costmap
         simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
             getSocialHeatmapObjective(si_local, motion_cost_interpolation_));
@@ -805,18 +863,6 @@ void OnlinePlannFramework::planWithSimpleSetup()
 
     rclcpp::Rate loop_rate(1.0 / (timer_period_ - solving_time_)); // 10 hz
     // goal_available_ = true;
-
-    // ! loading torchscript model
-    torch::jit::script::Module module;
-    try
-    {
-        module = torch::jit::load("/home/sasm/trained_model/model_yaw_0.1_final_artifact_mse.pth");
-    }
-    catch (const c10::Error &e)
-    {
-        RCLCPP_ERROR(this->get_logger(), "Error loading the model");
-        return;
-    }
 
     while (rclcpp::ok())
     {
@@ -1230,30 +1276,6 @@ void OnlinePlannFramework::planningTimerCallback()
                     simple_setup_local_->getStateSpace()->as<ob::SE2StateSpace>()->setBounds(bounds);
                 }
 
-                //=======================================================================
-                // ! Set a modified sampler
-                //=======================================================================
-
-                if (reuse_last_best_solution_)
-                {
-
-                    //=======================================================================
-                    // Set optimization objective
-                    //=======================================================================
-                    if (local_optimization_objective_.compare("PathLength") == 0) // path length Objective
-                        simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
-                            getPathLengthObjective(simple_setup_local_->getSpaceInformation()));
-                    else if (local_optimization_objective_.compare("SocialComfort") == 0)
-                        simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
-                            getSocialComfortObjective(simple_setup_local_->getSpaceInformation(), motion_cost_interpolation_, local_space, simple_setup_local_->getPlanner(), global_path_feedback));
-                    else if (local_optimization_objective_.compare("SocialHeatmap") == 0) // Social Costmap
-                        simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
-                            getSocialHeatmapObjective(simple_setup_local_->getSpaceInformation(), motion_cost_interpolation_));
-                    else
-                        simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
-                            getPathLengthObjective(simple_setup_local_->getSpaceInformation()));
-                }
-
                 // ! check if last path is collision free
                 bool is_past_path_free = false;
                 double distance_to_last_point = 0;
@@ -1310,6 +1332,87 @@ void OnlinePlannFramework::planningTimerCallback()
                 // ========================================
 
                 simple_setup_local_->setStartState(local_start);
+
+                std::vector<double> start;
+                std::vector<double> goal;
+                start.resize(3);
+                goal.resize(3);
+
+                start[0] = local_start[0];
+                start[1] = local_start[1];
+                start[2] = local_start[2];
+
+                goal[0] = local_goal[0];
+                goal[1] = local_goal[1];
+                goal[2] = local_goal[2];
+
+                // using models
+                grid_map::GridMap inferences_gridmap;
+                inferences_gridmap.setGeometry(grid_map::Length(10.0, 10.0), 0.1, grid_map::Position(0.0, 0.0));
+                inferences_gridmap.setFrameId("base_footprint");
+
+                RCLCPP_WARN(this->get_logger(), "ABOUT TO TAKE INFERENCES");
+
+                if (use_position_cnn_)
+                {
+                    std::vector<torch::jit::IValue> cnn_input;
+                    RCLCPP_WARN(this->get_logger(), "OBTAINING INPUTS");
+                    cnn_input = getLocalInputs(start, goal, relevant_agents_, grid_map_msg);
+
+                    RCLCPP_WARN(this->get_logger(), "ABOUT TO TAKE XY INFERENCE");
+
+                    at::Tensor xy_inference_tensor = xy_module_.forward(cnn_input).toTensor();
+
+                    inferences_gridmap.add("xy_inference");
+
+                    RCLCPP_WARN(this->get_logger(), " XY INFERENCE OBTAINED");
+
+                    grid_map::Matrix xy_inference_matrix = tensorToGridMapMatrix(xy_inference_tensor);
+
+                    RCLCPP_WARN(this->get_logger(), "OBTAINED INFERENCE MATRIX");
+
+                    inferences_gridmap["xy_inference"] = xy_inference_matrix;
+
+                    RCLCPP_WARN(this->get_logger(), "XY INFERENCE IN GRIDMAP");
+
+                    if (use_orientation_cnn_)
+                    {
+                        at::Tensor yaw_inference_tensor = xy_module_.forward(cnn_input).toTensor();
+
+                        inferences_gridmap.add("yaw_inference");
+
+                        inferences_gridmap["yaw_inference"] = tensorToGridMapMatrix(yaw_inference_tensor);
+                    }
+                }
+
+                RCLCPP_WARN(this->get_logger(), "INFERENCES OBTAINED");
+
+                //=======================================================================
+                // ! Set a modified sampler
+                //=======================================================================
+
+                if (reuse_last_best_solution_)
+                {
+
+                    //=======================================================================
+                    // Set optimization objective
+                    //=======================================================================
+                    if (local_optimization_objective_.compare("PathLength") == 0) // path length Objective
+                        simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
+                            getPathLengthObjective(simple_setup_local_->getSpaceInformation()));
+                    else if (local_optimization_objective_.compare("SocialComfort") == 0)
+                        simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
+                            getSocialComfortObjective(simple_setup_local_->getSpaceInformation(), motion_cost_interpolation_, local_space, simple_setup_local_->getPlanner(), global_path_feedback, use_position_cnn_, use_orientation_cnn_, rejection_chance_, orientation_chance_, inferences_gridmap, start));
+                    else if (local_optimization_objective_.compare("SocialHeatmap") == 0) // Social Costmap
+                        simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
+                            getSocialHeatmapObjective(simple_setup_local_->getSpaceInformation(), motion_cost_interpolation_));
+                    else
+                        simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
+                            getPathLengthObjective(simple_setup_local_->getSpaceInformation()));
+                }
+
+                // =========================================================================
+
                 //=======================================================================
                 // ! Attempt to solve the problem within one second of planning time
                 //=======================================================================
@@ -1892,7 +1995,7 @@ ob::GoalStates *OnlinePlannFramework::findNewGoalCandidate(const ob::ScopedState
     while (i < 50)
     {
 
-        double r = local_goal_radius_ * std::sqrt(((double)rand() / (RAND_MAX)));
+        double r = (local_goal_radius_ + 2.0) * std::sqrt(((double)rand() / (RAND_MAX)));
         double theta = (((double)rand() / (RAND_MAX))) * 2 * M_PI;
         double x = goal_candidate[0] + r * cos(theta);
         double y = goal_candidate[1] + r * sin(theta);
@@ -1937,6 +2040,275 @@ double OnlinePlannFramework::calculateAngle(double x1, double y1, double x2, dou
 {
     double angle = atan2(y2 - y1, x2 - x1);
     return angle + (2.0 * M_PI * floor((M_PI - angle) / (2.0 * M_PI)));
+}
+
+std::vector<torch::jit::IValue> OnlinePlannFramework::getLocalInputs(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map_msg)
+{
+    grid_map::GridMap grid_map;
+    grid_map::GridMap xy_grid_map;
+    grid_map::Matrix obstacles_grid_map_;
+
+    if (grid_map::GridMapRosConverter::fromMessage(grid_map_msg, grid_map))
+    {
+
+        RCLCPP_WARN(this->get_logger(), "CONVERED GRIDMAP");
+
+        obstacles_grid_map_ = grid_map["obstacles"];
+
+        xy_grid_map.setGeometry(grid_map::Length(10.0, 10.0), grid_map.getResolution(), grid_map::Position(0.0, 0.0));
+        xy_grid_map.setFrameId("base_footprint");
+        xy_grid_map.add("obstacles");
+        xy_grid_map["obstacles"].setConstant(0.0);
+
+        // ! OBSTACLES
+
+        for (grid_map::GridMapIterator iterator(xy_grid_map); !iterator.isPastEnd(); ++iterator)
+        {
+            const grid_map::Index index(*iterator);
+            grid_map::Position val_pos;
+            xy_grid_map.getPosition(index, val_pos);
+
+            // ===================================
+
+            grid_map::Position obs_pos(val_pos[0] + start[0], val_pos[1] + start[1]);
+            grid_map::Index obs_index;
+            grid_map.getIndex(obs_pos, obs_index);
+
+            double value = obstacles_grid_map_(obs_index(0), obs_index(1));
+            if (value > 20)
+            {
+                xy_grid_map.at("obstacles", index) = 1.0;
+            }
+        }
+
+        RCLCPP_WARN(this->get_logger(), "OBSTACLES ADDED");
+
+        // ! RELEVANT AGENTS
+
+        for (int i = 0; i < relevant_agents_->agent_states.size(); i++)
+        {
+
+            grid_map::Position pos(relevant_agents_->agent_states[i].pose.position.x - start[0], relevant_agents_->agent_states[i].pose.position.y - start[1]);
+            grid_map::Index index;
+            xy_grid_map.getIndex(pos, index);
+            xy_grid_map.at("obstacles", index) = 5.0;
+        }
+
+        RCLCPP_WARN(this->get_logger(), "AGENTS ADDED");
+
+        // ! START
+
+        grid_map::Index start_index;
+        xy_grid_map.getIndex(grid_map::Position(0.0, 0.0), start_index);
+        xy_grid_map.at("obstacles", start_index) = 2.0;
+
+        // ! GOAL
+
+        grid_map::Index goal_index;
+        xy_grid_map.getIndex(grid_map::Position(goal[0] - start[0], goal[1] - start[1]), goal_index);
+        xy_grid_map.at("obstacles", goal_index) = 3.0;
+    }
+
+    RCLCPP_WARN(this->get_logger(), "GRIDMAP PREPARED");
+
+    torch::Device device = torch::kCUDA;
+    std::vector<torch::jit::IValue> inputs = prepareInputs(xy_grid_map["obstacles"], 0.35, wrapAngle(start[2]), wrapAngle(goal[2]), device);
+
+    RCLCPP_WARN(this->get_logger(), "INPUTS PREPARED");
+
+    return inputs;
+}
+
+// torch::Tensor OnlinePlannFramework::gridMapToTensor(const grid_map::Matrix &matrix)
+// {
+//     return torch::from_blob(
+//                const_cast<float *>(matrix.data()),           // Pointer to the data
+//                {matrix.rows(), matrix.cols()},               // Tensor dimensions
+//                torch::TensorOptions().dtype(torch::kFloat32) // Tensor options
+//                )
+//         .clone(); // Clone to make sure the tensor owns its data
+// }
+
+torch::Tensor OnlinePlannFramework::gridMapToTensor(const grid_map::Matrix &matrix)
+{
+    // Step 1: Create the original tensor from the grid_map::Matrix
+    torch::Tensor original_tensor = torch::from_blob(
+                                        const_cast<float *>(matrix.data()),           // Pointer to the data
+                                        {1, matrix.rows(), matrix.cols()},            // Tensor dimensions with 1 channel
+                                        torch::TensorOptions().dtype(torch::kFloat32) // Tensor options
+                                        )
+                                        .clone(); // Clone to make sure the tensor owns its data
+
+    // Step 2: Create two additional channels of zeros
+    torch::Tensor zero_channel = torch::zeros({1, matrix.rows(), matrix.cols()}, torch::TensorOptions().dtype(torch::kFloat32));
+
+    // Step 3: Concatenate the original tensor with the zero channels along the channel dimension
+    torch::Tensor result_tensor = torch::cat({original_tensor, zero_channel, zero_channel}, 0);
+
+    return result_tensor;
+}
+
+// grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const at::Tensor &tensor)
+// {
+//     // Ensure the tensor is 4-dimensional
+//     if (tensor.dim() != 4)
+//     {
+//         throw std::invalid_argument("Tensor must be 4-dimensional.");
+//     }
+
+//     // Extract the 2D slice from the 4D tensor (assuming the first two dimensions are 1)
+//     auto tensor_2d = tensor.squeeze(); // Removes dimensions of size 1
+
+//     // Ensure the tensor is 2-dimensional after squeezing
+//     if (tensor_2d.dim() != 2)
+//     {
+//         throw std::invalid_argument("Tensor must be 2-dimensional after squeezing.");
+//     }
+
+//     // Get tensor dimensions
+//     int rows = tensor.size(0);
+//     int cols = tensor.size(1);
+
+//     // Ensure the tensor is of type float
+//     if (tensor.scalar_type() != at::kFloat)
+//     {
+//         throw std::invalid_argument("Tensor must be of type float.");
+//     }
+
+//     // Map the tensor data directly to an Eigen::Map, which points to the same memory
+//     Eigen::Map<const Eigen::MatrixXf> eigenMatrix(tensor.data_ptr<float>(), rows, cols);
+
+//     // // Convert Eigen::Matrix to grid_map::Matrix
+//     grid_map::Matrix grid_map_matrix(rows, cols);
+
+//     // Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(grid_map_matrix.data(), rows, cols) = eigenMatrix;
+
+//     // Map the tensor data directly to an Eigen::Matrix
+//     RCLCPP_WARN(this->get_logger(), "EIGEN READY");
+
+//     // Convert Eigen::Matrix to grid_map::Matrix
+//     RCLCPP_WARN(this->get_logger(), "MATRIX READY");
+//     for (int i = 0; i < rows; ++i)
+//     {
+//         for (int j = 0; j < cols; ++j)
+//         {
+//             grid_map_matrix(i, j) = eigenMatrix(i, j);
+//         }
+//     }
+
+//     RCLCPP_WARN(this->get_logger(), "ABOUT TO RETURN MATRIX INFERENCE FORM");
+
+//     // Return the mapped matrix
+//     return grid_map_matrix;
+// }
+
+grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const at::Tensor &tensor)
+{
+    // Ensure the tensor is 4-dimensional
+    if (tensor.dim() != 4)
+    {
+        throw std::invalid_argument("Tensor must be 4-dimensional.");
+    }
+
+    // Extract the 2D slice from the 4D tensor (assuming the first two dimensions are 1)
+    auto tensor_2d = tensor.squeeze();
+
+    // Debug prints
+    std::cout << "Tensor dimensions before squeeze: " << tensor.sizes() << std::endl;
+    std::cout << "Tensor dimensions after squeeze: " << tensor_2d.sizes() << std::endl;
+
+    // Ensure the tensor is 2-dimensional after squeezing
+    if (tensor_2d.dim() != 2)
+    {
+        throw std::invalid_argument("Tensor must be 2-dimensional after squeezing.");
+    }
+
+    // Get tensor dimensions
+    int rows = tensor_2d.size(0);
+    int cols = tensor_2d.size(1);
+
+    // Ensure the tensor is of type float
+    if (tensor_2d.scalar_type() != at::kFloat)
+    {
+        throw std::invalid_argument("Tensor must be of type float.");
+    }
+
+    // Create an Eigen matrix with the same dimensions
+    grid_map::Matrix matrix(rows, cols);
+
+    RCLCPP_WARN(this->get_logger(), "MATRIX INITIALIZED");
+
+    // Copy the data from the tensor to the grid_map::Matrix
+    auto tensor_data = tensor_2d.data_ptr<float>();
+
+    RCLCPP_WARN(this->get_logger(), "TENSOR DATA CHANGED");
+
+    for (int i = 0; i < rows; ++i)
+    {
+        for (int j = 0; j < cols; ++j)
+        {
+            RCLCPP_WARN(this->get_logger(), "ITERATING TENSOR");
+            double values = tensor_data[i * cols + j];
+            RCLCPP_WARN(this->get_logger(), "GOT BALUES");
+            matrix(i, j) = values;
+        }
+    }
+
+    // Print matrix for debugging
+    std::cout << "Grid map matrix:" << std::endl;
+    for (int i = 0; i < rows; ++i)
+    {
+        for (int j = 0; j < cols; ++j)
+        {
+            std::cout << matrix(i, j) << " ";
+        }
+        std::cout << std::endl;
+    }
+
+    return matrix;
+}
+
+std::vector<torch::jit::IValue> OnlinePlannFramework::prepareInputs(const grid_map::Matrix &matrix, double robot_size, double start_yaw, double goal_yaw, torch::Device device)
+{
+    std::vector<torch::jit::IValue> inputs;
+    // torch::Tensor map_tensor = gridMapToTensor(matrix).to(device);
+    // torch::Tensor robot_size_tensor = torch::tensor(robot_size).unsqueeze(0).to(device);
+    // torch::Tensor start_yaw_tensor = torch::tensor(start_yaw).unsqueeze(0).to(device);
+    // torch::Tensor goal_yaw_tensor = torch::tensor(goal_yaw).unsqueeze(0).to(device);
+
+    // Convert grid_map::Matrix to tensor and move to device
+    torch::Tensor map_tensor = gridMapToTensor(matrix).to(device);
+
+    map_tensor = map_tensor.unsqueeze(0);
+
+    torch::Tensor robot_size_tensor = torch::tensor({robot_size}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
+    torch::Tensor start_yaw_tensor = torch::tensor({start_yaw}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
+    torch::Tensor goal_yaw_tensor = torch::tensor({goal_yaw}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
+
+    // Print tensor sizes
+    std::cout << "map_tensor size: " << map_tensor.sizes() << std::endl;
+    std::cout << "robot_size_tensor size: " << robot_size_tensor.sizes() << std::endl;
+    std::cout << "start_yaw_tensor size: " << start_yaw_tensor.sizes() << std::endl;
+    std::cout << "goal_yaw_tensor size: " << goal_yaw_tensor.sizes() << std::endl;
+
+    inputs.push_back(map_tensor);
+    inputs.push_back(robot_size_tensor);
+    inputs.push_back(start_yaw_tensor);
+    inputs.push_back(goal_yaw_tensor);
+
+    return inputs;
+}
+
+double OnlinePlannFramework::wrapAngle(double angle)
+{
+
+    // Adjust the result to ensure it's in the range [0, 2*pi)
+    if (angle < 0)
+    {
+        angle += 2.0 * M_PI;
+    }
+
+    return angle;
 }
 
 //! Main function
