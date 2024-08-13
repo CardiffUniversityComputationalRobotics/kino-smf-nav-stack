@@ -1166,10 +1166,10 @@ void OnlinePlannFramework::planningTimerCallback()
                     s->as<ob::SE2StateSpace::StateType>()->setX(solution_path_states_[i]->as<ob::RealVectorStateSpace::StateType>()->values[0]);
                     s->as<ob::SE2StateSpace::StateType>()->setY(solution_path_states_[i]->as<ob::RealVectorStateSpace::StateType>()->values[1]);
 
-                    double state_angle = calculateAngle(solution_path_states_[i - 1]->as<ob::RealVectorStateSpace::StateType>()->values[1],
+                    double state_angle = calculateAngle(solution_path_states_[i]->as<ob::RealVectorStateSpace::StateType>()->values[0],
                                                         solution_path_states_[i]->as<ob::RealVectorStateSpace::StateType>()->values[1],
                                                         solution_path_states_[i - 1]->as<ob::RealVectorStateSpace::StateType>()->values[0],
-                                                        solution_path_states_[i]->as<ob::RealVectorStateSpace::StateType>()->values[0]);
+                                                        solution_path_states_[i - 1]->as<ob::RealVectorStateSpace::StateType>()->values[1]);
 
                     s->as<ob::SE2StateSpace::StateType>()->setYaw(state_angle);
 
