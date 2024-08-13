@@ -48,6 +48,12 @@
 // For std::vector
 #include <vector>
 
+#include <grid_map_ros/grid_map_ros.hpp>
+#include "grid_map_cv/GridMapCvConverter.hpp"
+
+#include <cv_bridge/cv_bridge.h>
+#include <opencv2/opencv.hpp>
+
 namespace ompl
 {
     namespace base
@@ -306,7 +312,10 @@ namespace ompl
                             if (rand_orient < orientation_chance_)
                             {
                                 double angle = getSampleYaw(sample->getX(), sample->getY(), start_);
-                                statePtr->as<ompl::base::SE2StateSpace::StateType>()->setYaw(angle);
+                                if (angle != -1)
+                                {
+                                    statePtr->as<ompl::base::SE2StateSpace::StateType>()->setYaw(wrapAngle(angle - 1));
+                                }
                             }
                         }
                         return found_sample;
@@ -325,7 +334,7 @@ namespace ompl
 
             if (inferences_->getIndex(query, index))
             {
-                if (xy_inference_(index(0), index(1)) > 0.5)
+                if (xy_inference_(index(0), index(1)) > 0.2)
                 {
                     return true;
                 }
@@ -341,11 +350,15 @@ namespace ompl
 
             grid_map::Index index;
 
-            double angle;
+            double angle = -1;
 
             if (inferences_->getIndex(query, index))
             {
-                angle = wrapAngle(yaw_inference_(index(0), index(1)) - 1);
+                angle = yaw_inference_(index(0), index(1));
+                if (angle < 1)
+                {
+                    angle = -1;
+                }
             }
 
             return angle;
