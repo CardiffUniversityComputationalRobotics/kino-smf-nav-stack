@@ -119,8 +119,8 @@ def evaluate_model(model, test_loader, xy_criterion):
 
 # Hyperparameters and dataset setup
 
-raw_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
-xy_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/path"
+raw_image_path = "/home/steven/07_08_dataset/dataset/test"
+xy_image_path = "/home/steven/07_08_dataset/dataset/train/path"
 
 image_paths, start_orientations, goal_orientations = get_images_and_params(
     raw_image_path
@@ -157,18 +157,16 @@ model = XYCNN().to(device)
 
 xy_criterion = nn.BCELoss()
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-
+# optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
 
 trained_model = train_model(
-    model, train_loader, xy_criterion, optimizer, num_epochs=2000
+    model, train_loader, xy_criterion, optimizer, num_epochs=500
 )
 
-model_path = (
-    "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_xy_0.0001_final.pth"
-)
+model_path = "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_xy_0.1_sgd_final.pth"
 
-model_scripted = torch.jit.script(trained_model) 
+model_scripted = torch.jit.script(trained_model)
 
 model_scripted.save(model_path)
 

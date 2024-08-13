@@ -12,6 +12,8 @@ import sys
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import cv2
 import time
+from model_primitives import CircularLossMod
+
 torch.cuda.empty_cache()
 
 
@@ -101,7 +103,7 @@ def evaluate_model(model, test_loader, yaw_criterion):
 
             yaw_inference = model(
                 inputs, robot_size, start_orientations, goal_orientations
-            ) 
+            )
 
             groundtruths.extend(yaw_groundtruth.flatten().cpu().numpy())
             inferences.extend(yaw_inference.flatten().cpu().numpy())
@@ -117,11 +119,11 @@ def evaluate_model(model, test_loader, yaw_criterion):
 
 # Hyperparameters and dataset setup
 
-raw_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/test"
-yaw_image_path = "/home/steven/ros/humble/system/src/social_nav_benchmark/results/kino_smf_planner/dataset/train/orientation"
+raw_image_path = "/home/steven/07_08_dataset/dataset/test"
+yaw_image_path = "/home/steven/07_08_dataset/dataset/train/orientation"
 
-image_paths, yaw_maps, start_orientations, goal_orientations = get_images_and_params_yaw(
-    raw_image_path
+image_paths, yaw_maps, start_orientations, goal_orientations = (
+    get_images_and_params_yaw(raw_image_path)
 )
 
 start_orientations = np.array(start_orientations).astype(np.float32)
@@ -154,7 +156,8 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = YawCNN().to(device)
 
-yaw_criterion = nn.MSELoss()
+# yaw_criterion = nn.MSELoss()
+yaw_criterion = CircularLossMod()
 
 optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
 
@@ -163,10 +166,8 @@ trained_model = train_model(
     model, train_loader, yaw_criterion, optimizer, num_epochs=2000
 )
 
-model_path = (
-    "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/trained_model/model_yaw_0.1_final.pth"
-)
-model_scripted = torch.jit.script(trained_model) 
+model_path = "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/trained_model/model_yaw_0.1_final_artifact_circular.pth"
+model_scripted = torch.jit.script(trained_model)
 
 model_scripted.save(model_path)
 

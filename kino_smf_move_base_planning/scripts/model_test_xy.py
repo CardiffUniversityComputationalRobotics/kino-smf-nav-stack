@@ -13,12 +13,11 @@ import sys
 
 # Initialize the model
 loaded_model = XYCNN()
-model_path = (
-    "/home/sasm/ros/humble/system/src/kino_smf_move_base_planning/scripts/model_xy.pth"
-)
+model_path = "/home/steven/ros/humble/system/src/kino_smf_move_base_planning/scripts/trained_model/model_xy_0.01_final.pth"
 
 # Load the state dictionary into the model
-loaded_model.load_state_dict(torch.load(model_path))
+# loaded_model.load_state_dict(torch.load(model_path))
+loaded_model = torch.jit.load(model_path)
 
 # Move the model to the appropriate device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -68,10 +67,10 @@ def preprocess_attributes(robot_size, start_orientation, goal_orientation):
 
 # Example file path and attributes
 # image_path = "/home/sasm/test_dataset/test/2024-07-19_18-33-45_-2.191234_-2.425865.png"
-image_path = "/home/sasm/Downloads/dataset_23_07/dataset/test/2024-07-23_07-59-40_-0.270260_0.854287.png"
+image_path = "/home/steven/Downloads/26_07_dataset/dataset/test/2024-07-26_08-32-18_4.060375_1.058260.png"
 robot_size = 0.35
-start_orientation = -0.2702
-goal_orientation = 0.8542
+start_orientation = 4.06
+goal_orientation = 1.058
 
 # Preprocess inputs
 image = preprocess_image(image_path).to(device)
@@ -84,6 +83,11 @@ goal_orientation = goal_orientation.to(device)
 
 # Make predictions
 with torch.no_grad():
+    print(image.size())
+    print(robot_size.size())
+    print(robot_size)
+    print(start_orientation.size())
+    print(goal_orientation.size())
     xy_pdf = loaded_model(image, robot_size, start_orientation, goal_orientation)
 
 # Output shape should be [1, 1, 128, 128] for a single input
