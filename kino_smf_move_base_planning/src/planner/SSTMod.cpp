@@ -254,7 +254,11 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
         if (goal_s && rng_.uniform01() < goalBias_ && goal_s->canSample())
             goal_s->sampleGoal(rstate);
         else
-            sampler_->sampleUniform(rstate, prevSolutionCost_);
+        {
+            bool foundSample = sampler_->sampleUniform(rstate, prevSolutionCost_);
+            if (!foundSample)
+                continue;
+        }
 
         /* find closest state in the tree */
         Motion *nmotion = selectNode(rmotion);
