@@ -60,6 +60,7 @@
 #include <state_cost_objective.h>
 #include <state_validity_checker_grid_map_R2.h>
 #include <local_state_validity_checker_grid_map_SE2.h>
+#include <goal_region_angle_tolerance.h>
 #include "kinematic_diff_model.h"
 
 // smf base controller
@@ -1070,7 +1071,7 @@ void OnlinePlannFramework::planningTimerCallback()
 
         simple_setup_local_->clearStartStates();
         ob::ScopedState<> local_start(simple_setup_local_->getSpaceInformation()->getStateSpace());
-        ob::ScopedState<> local_goal(simple_setup_local_->getSpaceInformation()->getStateSpace());
+        ob::ScopedState<ob::SE2StateSpace> local_goal(simple_setup_local_->getSpaceInformation()->getStateSpace());
 
         //
         simple_setup_local_->getStateSpace()->setValidSegmentCountFactor(15.0);
@@ -1150,9 +1151,9 @@ void OnlinePlannFramework::planningTimerCallback()
 
                 double local_path_distance = 0;
 
-                local_goal[0] = double(solution_path_states_[0]->as<ob::RealVectorStateSpace::StateType>()->values[0]); // x
-                local_goal[1] = double(solution_path_states_[0]->as<ob::RealVectorStateSpace::StateType>()->values[1]); // y
-                local_goal[2] = double(0);
+                local_goal->setX(double(solution_path_states_[0]->as<ob::RealVectorStateSpace::StateType>()->values[0])); // x
+                local_goal->setY(double(solution_path_states_[0]->as<ob::RealVectorStateSpace::StateType>()->values[1])); // y
+                local_goal->setYaw(double(0));
 
                 ob::SpaceInformationPtr si_global = simple_setup_global_->getSpaceInformation();
 
@@ -1177,9 +1178,9 @@ void OnlinePlannFramework::planningTimerCallback()
 
                     if (local_path_distance >= local_path_range_)
                     {
-                        local_goal[0] = double(solution_path_states_[i]->as<ob::RealVectorStateSpace::StateType>()->values[0]); // x
-                        local_goal[1] = double(solution_path_states_[i]->as<ob::RealVectorStateSpace::StateType>()->values[1]); // y
-                        local_goal[2] = double(state_angle);
+                        local_goal->setX(double(solution_path_states_[i]->as<ob::RealVectorStateSpace::StateType>()->values[0])); // x
+                        local_goal->setY(double(solution_path_states_[i]->as<ob::RealVectorStateSpace::StateType>()->values[1])); // y
+                        local_goal->setYaw(double(state_angle));
                         break;
                     }
                 }
@@ -1194,7 +1195,6 @@ void OnlinePlannFramework::planningTimerCallback()
                         global_path_feedback.push_back(s);
                     }
                 }
-
                 std::reverse(global_path_feedback.begin(), global_path_feedback.end());
 
                 //======================================================================
@@ -1213,23 +1213,28 @@ void OnlinePlannFramework::planningTimerCallback()
                     if ((waypoints_diff_x < 3 && waypoints_diff_y < 3))
                     {
 
-                        local_goal[0] = double(solution_path_states_[0]->as<ob::RealVectorStateSpace::StateType>()->values[0]); // x
-                        local_goal[1] = double(solution_path_states_[0]->as<ob::RealVectorStateSpace::StateType>()->values[1]); // y
+                        local_goal->setX(double(solution_path_states_[0]->as<ob::RealVectorStateSpace::StateType>()->values[0])); // x
+                        local_goal->setY(double(solution_path_states_[0]->as<ob::RealVectorStateSpace::StateType>()->values[1])); // y
 
                         double angle = calculateAngle(start[0], start[1], solution_path_states_[0]->as<ob::RealVectorStateSpace::StateType>()->values[0], solution_path_states_[0]->as<ob::RealVectorStateSpace::StateType>()->values[1]);
 
-                        local_goal[2] = angle; // yaw
+                        local_goal->setYaw(angle); // yaw
 
-                        simple_setup_local_->setGoalState(local_goal, goal_radius_);
+                        auto goalState = std::make_shared<GoalRegionAngleTolerance>(simple_setup_local_->getSpaceInformation(), goal_radius_, yaw_goal_tolerance_);
+                        goalState->setState(local_goal);
+
+                        simple_setup_local_->setGoal(goalState);
                     }
                     else
                     {
-                        simple_setup_local_->setGoalState(local_goal, local_goal_radius_);
+                        auto goalState = std::make_shared<GoalRegionAngleTolerance>(simple_setup_local_->getSpaceInformation(), local_goal_radius_, yaw_goal_tolerance_);
+                        goalState->setState(local_goal);
+
+                        simple_setup_local_->setGoal(goalState);
                     }
                 }
                 else
                 {
-
                     ob::GoalStates *new_goal_local = findNewGoalCandidate(local_goal);
                     new_goal_local->setThreshold(local_goal_radius_);
                     simple_setup_local_->setGoal(ob::GoalPtr(new_goal_local));
@@ -2001,7 +2006,7 @@ ob::GoalStates *OnlinePlannFramework::findNewGoalCandidate(const ob::ScopedState
     while (i < 50)
     {
 
-        double r = (local_goal_radius_ + 2.0) * std::sqrt(((double)rand() / (RAND_MAX)));
+        double r = local_goal_radius_ * std::sqrt(((double)rand() / (RAND_MAX)));
         double theta = (((double)rand() / (RAND_MAX))) * 2 * M_PI;
         double x = goal_candidate[0] + r * cos(theta);
         double y = goal_candidate[1] + r * sin(theta);

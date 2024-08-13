@@ -85,6 +85,7 @@ add_executable(kino_smf_move_base_planner
   src/informed_new_state_sampler.cpp
   src/state_cost_objective.cpp
   src/kinematic_diff_model.cpp
+  src/goal_region_angle_tolerance.cpp
 )
 
 # Link libraries
