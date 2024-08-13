@@ -123,8 +123,10 @@ public:
     //! gridmap to tensor
     torch::Tensor gridMapToTensor(const grid_map::Matrix &matrix);
     grid_map::Matrix tensorToGridMapMatrix(const at::Tensor &tensor);
+    std::vector<double> tensorToVector(const at::Tensor &tensor);
     std::vector<torch::jit::IValue> prepareInputs(const grid_map::Matrix &matrix, double robot_size, double start_yaw, double goal_yaw, torch::Device device);
     double wrapAngle(double angle);
+    std::vector<double> matrixToVector(const grid_map::Matrix &matrix);
 
 private:
     // ! SUBSCRIBERS
@@ -839,13 +841,19 @@ void OnlinePlannFramework::planWithSimpleSetup()
     std::vector<const ob::State *> dummy_global_path_feedback;
     grid_map::GridMap dummy_grid_map;
 
+    auto dummy_gridmap = std::make_shared<grid_map::GridMap>();
+    dummy_gridmap->setGeometry(grid_map::Length(10.0, 10.0), 0.1, grid_map::Position(0.0, 0.0));
+    dummy_gridmap->setFrameId("base_footprint");
+    dummy_gridmap->add("xy_inference");
+    dummy_gridmap->add("yaw_inference");
+
     std::vector<double> dummy_start;
 
     if (local_optimization_objective_.compare("PathLength") == 0) // path length Objective
         simple_setup_local_->getProblemDefinition()->setOptimizationObjective(getPathLengthObjective(si_local));
     else if (local_optimization_objective_.compare("SocialComfort") == 0) // Social Comfort
         simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
-            getSocialComfortObjective(si_local, motion_cost_interpolation_, local_space, simple_setup_local_->getPlanner(), dummy_global_path_feedback, use_position_cnn_, use_orientation_cnn_, rejection_chance_, orientation_chance_, dummy_grid_map, dummy_start));
+            getSocialComfortObjective(simple_setup_local_->getSpaceInformation(), motion_cost_interpolation_, local_space, simple_setup_local_->getPlanner(), dummy_global_path_feedback, use_position_cnn_, use_orientation_cnn_, rejection_chance_, orientation_chance_, dummy_gridmap, dummy_start));
     else if (local_optimization_objective_.compare("SocialHeatmap") == 0) // Social Costmap
         simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
             getSocialHeatmapObjective(si_local, motion_cost_interpolation_));
@@ -1064,6 +1072,8 @@ void OnlinePlannFramework::planningTimerCallback()
             new LocalGridMapStateValidityCheckerSE2(simple_setup_local_->getSpaceInformation(), opport_collision_check_,
                                                     planning_bounds_x_, planning_bounds_y_, grid_map_msg, robot_base_radius_, local_use_social_heatmap_));
         simple_setup_local_->setStateValidityChecker(local_om_stat_val_check);
+
+        simple_setup_global_->getPlanner()->setup();
 
         //=======================================================================
         // ! Attempt to solve the problem within one second of planning time
@@ -1347,45 +1357,30 @@ void OnlinePlannFramework::planningTimerCallback()
                 goal[2] = local_goal[2];
 
                 // using models
-                grid_map::GridMap inferences_gridmap;
-                inferences_gridmap.setGeometry(grid_map::Length(10.0, 10.0), 0.1, grid_map::Position(0.0, 0.0));
-                inferences_gridmap.setFrameId("base_footprint");
-
-                RCLCPP_WARN(this->get_logger(), "ABOUT TO TAKE INFERENCES");
+                auto inferences_gridmap = std::make_shared<grid_map::GridMap>();
+                inferences_gridmap->setGeometry(grid_map::Length(10.0, 10.0), 0.1, grid_map::Position(0.0, 0.0));
+                inferences_gridmap->setFrameId("base_footprint");
 
                 if (use_position_cnn_)
                 {
                     std::vector<torch::jit::IValue> cnn_input;
-                    RCLCPP_WARN(this->get_logger(), "OBTAINING INPUTS");
                     cnn_input = getLocalInputs(start, goal, relevant_agents_, grid_map_msg);
-
-                    RCLCPP_WARN(this->get_logger(), "ABOUT TO TAKE XY INFERENCE");
 
                     at::Tensor xy_inference_tensor = xy_module_.forward(cnn_input).toTensor();
 
-                    inferences_gridmap.add("xy_inference");
+                    inferences_gridmap->add("xy_inference");
 
-                    RCLCPP_WARN(this->get_logger(), " XY INFERENCE OBTAINED");
-
-                    grid_map::Matrix xy_inference_matrix = tensorToGridMapMatrix(xy_inference_tensor);
-
-                    RCLCPP_WARN(this->get_logger(), "OBTAINED INFERENCE MATRIX");
-
-                    inferences_gridmap["xy_inference"] = xy_inference_matrix;
-
-                    RCLCPP_WARN(this->get_logger(), "XY INFERENCE IN GRIDMAP");
+                    (*inferences_gridmap)["xy_inference"] = tensorToGridMapMatrix(xy_inference_tensor);
 
                     if (use_orientation_cnn_)
                     {
                         at::Tensor yaw_inference_tensor = xy_module_.forward(cnn_input).toTensor();
 
-                        inferences_gridmap.add("yaw_inference");
+                        inferences_gridmap->add("yaw_inference");
 
-                        inferences_gridmap["yaw_inference"] = tensorToGridMapMatrix(yaw_inference_tensor);
+                        (*inferences_gridmap)["yaw_inference"] = tensorToGridMapMatrix(yaw_inference_tensor);
                     }
                 }
-
-                RCLCPP_WARN(this->get_logger(), "INFERENCES OBTAINED");
 
                 //=======================================================================
                 // ! Set a modified sampler
@@ -1411,7 +1406,7 @@ void OnlinePlannFramework::planningTimerCallback()
                             getPathLengthObjective(simple_setup_local_->getSpaceInformation()));
                 }
 
-                // =========================================================================
+                simple_setup_local_->getPlanner()->setup();
 
                 //=======================================================================
                 // ! Attempt to solve the problem within one second of planning time
@@ -2042,6 +2037,19 @@ double OnlinePlannFramework::calculateAngle(double x1, double y1, double x2, dou
     return angle + (2.0 * M_PI * floor((M_PI - angle) / (2.0 * M_PI)));
 }
 
+std::vector<double> OnlinePlannFramework::matrixToVector(const grid_map::Matrix &matrix)
+{
+    std::vector<double> vec(matrix.size());
+    for (int i = 0; i < matrix.rows(); ++i)
+    {
+        for (int j = 0; j < matrix.cols(); ++j)
+        {
+            vec[i * matrix.cols() + j] = 1.0;
+        }
+    }
+    return vec;
+}
+
 std::vector<torch::jit::IValue> OnlinePlannFramework::getLocalInputs(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map_msg)
 {
     grid_map::GridMap grid_map;
@@ -2050,8 +2058,6 @@ std::vector<torch::jit::IValue> OnlinePlannFramework::getLocalInputs(const std::
 
     if (grid_map::GridMapRosConverter::fromMessage(grid_map_msg, grid_map))
     {
-
-        RCLCPP_WARN(this->get_logger(), "CONVERED GRIDMAP");
 
         obstacles_grid_map_ = grid_map["obstacles"];
 
@@ -2081,8 +2087,6 @@ std::vector<torch::jit::IValue> OnlinePlannFramework::getLocalInputs(const std::
             }
         }
 
-        RCLCPP_WARN(this->get_logger(), "OBSTACLES ADDED");
-
         // ! RELEVANT AGENTS
 
         for (int i = 0; i < relevant_agents_->agent_states.size(); i++)
@@ -2093,8 +2097,6 @@ std::vector<torch::jit::IValue> OnlinePlannFramework::getLocalInputs(const std::
             xy_grid_map.getIndex(pos, index);
             xy_grid_map.at("obstacles", index) = 5.0;
         }
-
-        RCLCPP_WARN(this->get_logger(), "AGENTS ADDED");
 
         // ! START
 
@@ -2109,25 +2111,11 @@ std::vector<torch::jit::IValue> OnlinePlannFramework::getLocalInputs(const std::
         xy_grid_map.at("obstacles", goal_index) = 3.0;
     }
 
-    RCLCPP_WARN(this->get_logger(), "GRIDMAP PREPARED");
-
     torch::Device device = torch::kCUDA;
     std::vector<torch::jit::IValue> inputs = prepareInputs(xy_grid_map["obstacles"], 0.35, wrapAngle(start[2]), wrapAngle(goal[2]), device);
 
-    RCLCPP_WARN(this->get_logger(), "INPUTS PREPARED");
-
     return inputs;
 }
-
-// torch::Tensor OnlinePlannFramework::gridMapToTensor(const grid_map::Matrix &matrix)
-// {
-//     return torch::from_blob(
-//                const_cast<float *>(matrix.data()),           // Pointer to the data
-//                {matrix.rows(), matrix.cols()},               // Tensor dimensions
-//                torch::TensorOptions().dtype(torch::kFloat32) // Tensor options
-//                )
-//         .clone(); // Clone to make sure the tensor owns its data
-// }
 
 torch::Tensor OnlinePlannFramework::gridMapToTensor(const grid_map::Matrix &matrix)
 {
@@ -2148,60 +2136,6 @@ torch::Tensor OnlinePlannFramework::gridMapToTensor(const grid_map::Matrix &matr
     return result_tensor;
 }
 
-// grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const at::Tensor &tensor)
-// {
-//     // Ensure the tensor is 4-dimensional
-//     if (tensor.dim() != 4)
-//     {
-//         throw std::invalid_argument("Tensor must be 4-dimensional.");
-//     }
-
-//     // Extract the 2D slice from the 4D tensor (assuming the first two dimensions are 1)
-//     auto tensor_2d = tensor.squeeze(); // Removes dimensions of size 1
-
-//     // Ensure the tensor is 2-dimensional after squeezing
-//     if (tensor_2d.dim() != 2)
-//     {
-//         throw std::invalid_argument("Tensor must be 2-dimensional after squeezing.");
-//     }
-
-//     // Get tensor dimensions
-//     int rows = tensor.size(0);
-//     int cols = tensor.size(1);
-
-//     // Ensure the tensor is of type float
-//     if (tensor.scalar_type() != at::kFloat)
-//     {
-//         throw std::invalid_argument("Tensor must be of type float.");
-//     }
-
-//     // Map the tensor data directly to an Eigen::Map, which points to the same memory
-//     Eigen::Map<const Eigen::MatrixXf> eigenMatrix(tensor.data_ptr<float>(), rows, cols);
-
-//     // // Convert Eigen::Matrix to grid_map::Matrix
-//     grid_map::Matrix grid_map_matrix(rows, cols);
-
-//     // Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(grid_map_matrix.data(), rows, cols) = eigenMatrix;
-
-//     // Map the tensor data directly to an Eigen::Matrix
-//     RCLCPP_WARN(this->get_logger(), "EIGEN READY");
-
-//     // Convert Eigen::Matrix to grid_map::Matrix
-//     RCLCPP_WARN(this->get_logger(), "MATRIX READY");
-//     for (int i = 0; i < rows; ++i)
-//     {
-//         for (int j = 0; j < cols; ++j)
-//         {
-//             grid_map_matrix(i, j) = eigenMatrix(i, j);
-//         }
-//     }
-
-//     RCLCPP_WARN(this->get_logger(), "ABOUT TO RETURN MATRIX INFERENCE FORM");
-
-//     // Return the mapped matrix
-//     return grid_map_matrix;
-// }
-
 grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const at::Tensor &tensor)
 {
     // Ensure the tensor is 4-dimensional
@@ -2212,10 +2146,6 @@ grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const at::Tensor &t
 
     // Extract the 2D slice from the 4D tensor (assuming the first two dimensions are 1)
     auto tensor_2d = tensor.squeeze();
-
-    // Debug prints
-    std::cout << "Tensor dimensions before squeeze: " << tensor.sizes() << std::endl;
-    std::cout << "Tensor dimensions after squeeze: " << tensor_2d.sizes() << std::endl;
 
     // Ensure the tensor is 2-dimensional after squeezing
     if (tensor_2d.dim() != 2)
@@ -2236,47 +2166,78 @@ grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const at::Tensor &t
     // Create an Eigen matrix with the same dimensions
     grid_map::Matrix matrix(rows, cols);
 
-    RCLCPP_WARN(this->get_logger(), "MATRIX INITIALIZED");
-
-    // Copy the data from the tensor to the grid_map::Matrix
-    auto tensor_data = tensor_2d.data_ptr<float>();
-
-    RCLCPP_WARN(this->get_logger(), "TENSOR DATA CHANGED");
-
-    for (int i = 0; i < rows; ++i)
+    // Ensure the tensor is contiguous
+    if (!tensor_2d.is_contiguous())
     {
-        for (int j = 0; j < cols; ++j)
-        {
-            RCLCPP_WARN(this->get_logger(), "ITERATING TENSOR");
-            double values = tensor_data[i * cols + j];
-            RCLCPP_WARN(this->get_logger(), "GOT BALUES");
-            matrix(i, j) = values;
-        }
+        tensor_2d = tensor_2d.contiguous();
     }
 
-    // Print matrix for debugging
-    std::cout << "Grid map matrix:" << std::endl;
+    // Iterate through the tensor and copy each value to the matrix
     for (int i = 0; i < rows; ++i)
     {
         for (int j = 0; j < cols; ++j)
         {
-            std::cout << matrix(i, j) << " ";
+            // Access the tensor data and assign it to the matrix
+            matrix(i, j) = tensor_2d[i][j].item<float>();
         }
-        std::cout << std::endl;
     }
 
     return matrix;
 }
 
+std::vector<double> OnlinePlannFramework::tensorToVector(const at::Tensor &tensor)
+{
+    // Ensure the tensor is 4-dimensional
+    if (tensor.dim() != 4)
+    {
+        throw std::invalid_argument("Tensor must be 4-dimensional.");
+    }
+
+    // Extract the 2D slice from the 4D tensor (assuming the first two dimensions are 1)
+    auto tensor_2d = tensor.squeeze();
+
+    // Ensure the tensor is 2-dimensional after squeezing
+    if (tensor_2d.dim() != 2)
+    {
+        throw std::invalid_argument("Tensor must be 2-dimensional after squeezing.");
+    }
+
+    // Get tensor dimensions
+    int rows = tensor_2d.size(0);
+    int cols = tensor_2d.size(1);
+
+    // Ensure the tensor is of type float
+    if (tensor_2d.scalar_type() != at::kFloat)
+    {
+        throw std::invalid_argument("Tensor must be of type float.");
+    }
+
+    // Ensure the tensor is contiguousr
+    if (!tensor_2d.is_contiguous())
+    {
+        tensor_2d = tensor_2d.contiguous();
+    }
+
+    // Create a vector to store the flattened tensor data
+    std::vector<double> data(rows * cols);
+
+    for (int i = 0; i < rows; ++i)
+    {
+        for (int j = 0; j < cols; ++j)
+        {
+            // Flatten the 2D indices into a 1D index
+            int index = i * cols + j;
+            // data[index] = tensor_2d[i][j].item<float>();
+            data[index] = 0.5;
+        }
+    }
+
+    return data;
+}
+
 std::vector<torch::jit::IValue> OnlinePlannFramework::prepareInputs(const grid_map::Matrix &matrix, double robot_size, double start_yaw, double goal_yaw, torch::Device device)
 {
     std::vector<torch::jit::IValue> inputs;
-    // torch::Tensor map_tensor = gridMapToTensor(matrix).to(device);
-    // torch::Tensor robot_size_tensor = torch::tensor(robot_size).unsqueeze(0).to(device);
-    // torch::Tensor start_yaw_tensor = torch::tensor(start_yaw).unsqueeze(0).to(device);
-    // torch::Tensor goal_yaw_tensor = torch::tensor(goal_yaw).unsqueeze(0).to(device);
-
-    // Convert grid_map::Matrix to tensor and move to device
     torch::Tensor map_tensor = gridMapToTensor(matrix).to(device);
 
     map_tensor = map_tensor.unsqueeze(0);
@@ -2284,12 +2245,6 @@ std::vector<torch::jit::IValue> OnlinePlannFramework::prepareInputs(const grid_m
     torch::Tensor robot_size_tensor = torch::tensor({robot_size}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
     torch::Tensor start_yaw_tensor = torch::tensor({start_yaw}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
     torch::Tensor goal_yaw_tensor = torch::tensor({goal_yaw}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
-
-    // Print tensor sizes
-    std::cout << "map_tensor size: " << map_tensor.sizes() << std::endl;
-    std::cout << "robot_size_tensor size: " << robot_size_tensor.sizes() << std::endl;
-    std::cout << "start_yaw_tensor size: " << start_yaw_tensor.sizes() << std::endl;
-    std::cout << "goal_yaw_tensor size: " << goal_yaw_tensor.sizes() << std::endl;
 
     inputs.push_back(map_tensor);
     inputs.push_back(robot_size_tensor);

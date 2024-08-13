@@ -57,7 +57,7 @@ namespace ompl
         // The direct ellipsoid sampling class for path-length:
         PathLengthDirectInfSamplerMod::PathLengthDirectInfSamplerMod(const ProblemDefinitionPtr &probDefn,
                                                                      unsigned int maxNumberCalls, const StateSpacePtr space, const PlannerPtr &planner,
-                                                                     const std::vector<State *> solution_start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, grid_map::GridMap inferences, std::vector<double> start)
+                                                                     const std::vector<State *> solution_start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, const std::shared_ptr<const grid_map::GridMap> &inferences, std::vector<double> start)
             : InformedSampler(probDefn, maxNumberCalls), informedIdx_(0u), uninformedIdx_(0u)
         {
             // Variables
@@ -85,11 +85,12 @@ namespace ompl
 
             if (use_position_cnn_)
             {
-                xy_inference_ = inferences_["xy_inference"];
+                xy_inference_ = (*inferences_)["xy_inference"];
             }
+
             if (use_orientation_cnn_)
             {
-                yaw_inference_ = inferences_["yaw_inference"];
+                yaw_inference_ = (*inferences_)["yaw_inference"];
             }
 
             if (!probDefn_->getGoal()->hasType(ompl::base::GOAL_SAMPLEABLE_REGION))
@@ -286,11 +287,6 @@ namespace ompl
 
                 auto *sample = statePtr->as<ompl::base::SE2StateSpace::StateType>();
 
-                // std::cout << "#####################################" << std::endl;
-                // std::cout << sample->getX() << std::endl;
-                // std::cout << sample->getY() << std::endl;
-                // std::cout << sample->getYaw() << std::endl;
-
                 if (use_position_cnn_)
                 {
                     double rand_pos = rng_.uniform01();
@@ -327,7 +323,7 @@ namespace ompl
 
             grid_map::Index index;
 
-            if (inferences_.getIndex(query, index))
+            if (inferences_->getIndex(query, index))
             {
                 if (xy_inference_(index(0), index(1)) > 0.5)
                 {
@@ -347,7 +343,7 @@ namespace ompl
 
             double angle;
 
-            if (inferences_.getIndex(query, index))
+            if (inferences_->getIndex(query, index))
             {
                 angle = wrapAngle(yaw_inference_(index(0), index(1)) - 1);
             }

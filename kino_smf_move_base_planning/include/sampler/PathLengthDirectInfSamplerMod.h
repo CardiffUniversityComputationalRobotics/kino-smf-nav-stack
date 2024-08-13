@@ -53,7 +53,7 @@ namespace ompl
         {
         public:
             PathLengthDirectInfSamplerMod(const ProblemDefinitionPtr &probDefn, unsigned int maxNumberCalls, const StateSpacePtr space, const PlannerPtr &planner,
-                                          const std::vector<State *> solution_start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, grid_map::GridMap inferences, std::vector<double> start);
+                                          const std::vector<State *> solution_start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, const std::shared_ptr<const grid_map::GridMap> &inferences, std::vector<double> start);
             ~PathLengthDirectInfSamplerMod() override;
 
             bool sampleUniform(State *statePtr, const Cost &maxCost) override;
@@ -126,7 +126,7 @@ namespace ompl
             bool use_orientation_cnn_;
             double rejection_chance_;
             double orientation_chance_;
-            grid_map::GridMap inferences_;
+            std::shared_ptr<const grid_map::GridMap> inferences_;
 
             grid_map::Matrix xy_inference_;
             grid_map::Matrix yaw_inference_;

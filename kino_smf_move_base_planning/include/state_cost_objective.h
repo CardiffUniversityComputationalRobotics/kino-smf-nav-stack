@@ -43,14 +43,19 @@ public:
     bool use_orientation_cnn_;
     double rejection_chance_;
     double orientation_chance_;
-    grid_map::GridMap inferences_;
+
     std::vector<double> start_;
+
+    std::vector<double> inference_vector_;
+
+    std::shared_ptr<grid_map::GridMap> inferences_;
 
     SocialComfortObjective(const ob::SpaceInformationPtr &si,
                            bool enableMotionCostInterpolation, const ob::StateSpacePtr &space, const ob::PlannerPtr &planner,
-                           const std::vector<const ob::State *> &start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, grid_map::GridMap inferences, std::vector<double> start)
-        : ob::StateCostIntegralObjective(si, enableMotionCostInterpolation)
+                           const std::vector<const ob::State *> &start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, const std::shared_ptr<grid_map::GridMap> &inferences, std::vector<double> start)
+        : ob::StateCostIntegralObjective(si, enableMotionCostInterpolation), inferences_(inferences)
     {
+
         space_ = si_->getStateSpace();
         planner_ = planner;
 
@@ -59,8 +64,6 @@ public:
         use_orientation_cnn_ = use_orientation_cnn;
         rejection_chance_ = rejection_chance;
         orientation_chance_ = orientation_chance;
-        inferences_ = inferences;
-
         start_ = start;
 
         for (int i = 0; i < start_states.size(); i++)
@@ -211,7 +214,7 @@ public:
     away from social agents according to an extended social comfort model */
 ob::OptimizationObjectivePtr getSocialComfortObjective(const ob::SpaceInformationPtr &si,
                                                        bool motion_cost_interpolation, const ob::StateSpacePtr &space, const ob::PlannerPtr &planner,
-                                                       const std::vector<const ob::State *> &start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, grid_map::GridMap inferences, std::vector<double> start);
+                                                       const std::vector<const ob::State *> &start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, const std::shared_ptr<grid_map::GridMap> &inferences, std::vector<double> start);
 
 /** Return an optimization objective which attempts to steer the robot
     away from social agents according to a costmap provided by a world modeling module */

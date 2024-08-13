@@ -15,8 +15,9 @@
 // !SOCIAL COMFORT MODEL
 ob::OptimizationObjectivePtr getSocialComfortObjective(const ob::SpaceInformationPtr &si,
                                                        bool motion_cost_interpolation, const ob::StateSpacePtr &space, const ob::PlannerPtr &planner,
-                                                       const std::vector<const ob::State *> &start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, grid_map::GridMap inferences, std::vector<double> start)
+                                                       const std::vector<const ob::State *> &start_states, bool use_position_cnn, bool use_orientation_cnn, double rejection_chance, double orientation_chance, const std::shared_ptr<grid_map::GridMap> &inferences, std::vector<double> start)
 {
+
     return ob::OptimizationObjectivePtr(new SocialComfortObjective(si, motion_cost_interpolation, space, planner, start_states, use_position_cnn, use_orientation_cnn, rejection_chance, orientation_chance, inferences, start));
 }
 
