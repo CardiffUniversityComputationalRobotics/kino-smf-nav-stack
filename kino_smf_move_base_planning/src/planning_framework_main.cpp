@@ -73,6 +73,10 @@
 // gridmap imports
 #include <grid_map_ros/grid_map_ros.hpp>
 #include <grid_map_core/TypeDefs.hpp>
+#include "grid_map_cv/GridMapCvConverter.hpp"
+
+#include <cv_bridge/cv_bridge.h>
+#include <opencv2/opencv.hpp>
 
 #include <torch/script.h>
 
@@ -182,6 +186,9 @@ private:
     double local_goal_yaw_;
 
     // ! learning model use parameters
+    std::string position_model_path_;
+    std::string orientation_model_path_;
+
     bool use_position_cnn_;
     bool use_orientation_cnn_;
     // chances
@@ -251,6 +258,8 @@ OnlinePlannFramework::OnlinePlannFramework()
     this->declare_parameter("local_use_social_heatmap", rclcpp::ParameterValue(true));
 
     // learning model use parameters
+    this->declare_parameter("position_model_path", rclcpp::ParameterValue(std::string("position_model.pth")));
+    this->declare_parameter("orientation_model_path", rclcpp::ParameterValue(std::string("orientation_model.pth")));
     this->declare_parameter("use_position_cnn", rclcpp::ParameterValue(false));
     this->declare_parameter("use_orientation_cnn", rclcpp::ParameterValue(false));
     this->declare_parameter("rejection_chance", rclcpp::ParameterValue(0.5));
@@ -289,6 +298,8 @@ OnlinePlannFramework::OnlinePlannFramework()
     grid_map_service_ = this->get_parameter("grid_map_service").as_string();
     local_use_social_heatmap_ = this->get_parameter("local_use_social_heatmap").as_bool();
 
+    position_model_path_ = this->get_parameter("position_model_path").as_string();
+    orientation_model_path_ = this->get_parameter("orientation_model_path").as_string();
     use_position_cnn_ = this->get_parameter("use_position_cnn").as_bool();
     use_orientation_cnn_ = this->get_parameter("use_orientation_cnn").as_bool();
     // chances
@@ -633,7 +644,7 @@ void OnlinePlannFramework::planWithSimpleSetup()
     {
         try
         {
-            xy_module_ = torch::jit::load("/home/sasm/trained_model/model_xy_0.001_final.pth");
+            xy_module_ = torch::jit::load(position_model_path_);
         }
         catch (const c10::Error &e)
         {
@@ -646,7 +657,7 @@ void OnlinePlannFramework::planWithSimpleSetup()
     {
         try
         {
-            yaw_module_ = torch::jit::load("/home/sasm/trained_model/model_yaw_0.1_final_artifact_mse.pth");
+            yaw_module_ = torch::jit::load(orientation_model_path_);
         }
         catch (const c10::Error &e)
         {
@@ -1374,7 +1385,7 @@ void OnlinePlannFramework::planningTimerCallback()
 
                     if (use_orientation_cnn_)
                     {
-                        at::Tensor yaw_inference_tensor = xy_module_.forward(cnn_input).toTensor();
+                        at::Tensor yaw_inference_tensor = yaw_module_.forward(cnn_input).toTensor();
 
                         inferences_gridmap->add("yaw_inference");
 
@@ -2122,15 +2133,21 @@ torch::Tensor OnlinePlannFramework::gridMapToTensor(const grid_map::Matrix &matr
     // Step 1: Create the original tensor from the grid_map::Matrix
     torch::Tensor original_tensor = torch::from_blob(
                                         const_cast<float *>(matrix.data()),           // Pointer to the data
-                                        {1, matrix.rows(), matrix.cols()},            // Tensor dimensions with 1 channel
+                                        {matrix.rows(), matrix.cols()},               // Tensor dimensions
                                         torch::TensorOptions().dtype(torch::kFloat32) // Tensor options
                                         )
                                         .clone(); // Clone to make sure the tensor owns its data
 
-    // Step 2: Create two additional channels of zeros
-    torch::Tensor zero_channel = torch::zeros({1, matrix.rows(), matrix.cols()}, torch::TensorOptions().dtype(torch::kFloat32));
+    // Step 2: Transpose the tensor to correct the layout
+    original_tensor = original_tensor.t(); // Transpose the matrix to correct the layout
 
-    // Step 3: Concatenate the original tensor with the zero channels along the channel dimension
+    // Step 3: Add the batch/channel dimension
+    original_tensor = original_tensor.unsqueeze(0);
+
+    // Step 4: Create two additional channels of zeros
+    torch::Tensor zero_channel = torch::zeros_like(original_tensor);
+
+    // Step 5: Concatenate the original tensor with the zero channels along the channel dimension
     torch::Tensor result_tensor = torch::cat({original_tensor, zero_channel, zero_channel}, 0);
 
     return result_tensor;
