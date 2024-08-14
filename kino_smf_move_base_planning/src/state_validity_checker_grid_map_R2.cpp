@@ -38,8 +38,8 @@ GridMapStateValidityCheckerR2::GridMapStateValidityCheckerR2(const ob::SpaceInfo
 
     try
     {
-        obstacles_grid_map_ = grid_map_["obstacles"];
-        social_heatmap_grid_map_ = grid_map_["social_heatmap"];
+        obstacles_grid_map_ = grid_map_.get("obstacles");
+        social_heatmap_grid_map_ = grid_map_.get("social_heatmap");
     }
     catch (...)
     {
