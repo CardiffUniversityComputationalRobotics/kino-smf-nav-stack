@@ -217,9 +217,10 @@ WorldModeler::WorldModeler()
     //=======================================================================
     // Publishers
     //=======================================================================
+    auto qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
     octomap_marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("octomap_map", 2);
     grid_map_pub_ = this->create_publisher<grid_map_msgs::msg::GridMap>("social_grid_map", 1);
-    relevant_agents_pub_ = this->create_publisher<pedsim_msgs::msg::AgentStates>("relevant_agents", 1);
+    relevant_agents_pub_ = this->create_publisher<pedsim_msgs::msg::AgentStates>("relevant_agents", qos);
 
     //=======================================================================
     // Subscribers
@@ -752,6 +753,7 @@ void WorldModeler::agentStatesCallback(const pedsim_msgs::msg::AgentStates::Shar
             }
         }
 
+        relevant_agent_states_.agent_states.clear();
         relevant_agent_states_.agent_states = agent_state_vector;
 
         social_agents_in_radius_.agent_states = social_agents_in_radius_vector_;
