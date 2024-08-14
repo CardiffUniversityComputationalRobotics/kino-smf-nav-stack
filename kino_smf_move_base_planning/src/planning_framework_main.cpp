@@ -124,7 +124,7 @@ public:
     //! Callback for getting relevant agents
     void relevantAgentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agents_msg);
     //! generate input for network
-    void getLocalInputs(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map_msg, std::shared_ptr<std::vector<torch::jit::IValue>> &inputs);
+    void getLocalInputs(const std::vector<double> start, const std::vector<double> goal, const grid_map_msgs::msg::GridMap grid_map_msg, std::shared_ptr<std::vector<torch::jit::IValue>> &inputs);
     void prepareInputs(const grid_map::Matrix &matrix, double robot_size, double start_yaw, double goal_yaw, torch::Device device, std::shared_ptr<std::vector<torch::jit::IValue>> &inputs);
     // void gridMapToTensor(const grid_map::Matrix &matrix, torch::Tensor *output_tensor);
     torch::Tensor gridMapToTensor(const grid_map::Matrix &matrix);
@@ -1406,114 +1406,17 @@ void OnlinePlannFramework::planningTimerCallback()
                 inferences_gridmap->setGeometry(grid_map::Length(10.0, 10.0), 0.1, grid_map::Position(0.0, 0.0));
                 inferences_gridmap->setFrameId("base_footprint");
 
-                // inferences_gridmap->add("xy_inference");
-                // (*inferences_gridmap)["xy_inference"].setConstant(1.0);
-
-                // inferences_gridmap->add("yaw_inference");
-                // (*inferences_gridmap)["yaw_inference"].setConstant(1.0);
-
                 torch::Device device = torch::kCUDA;
 
                 if (use_position_cnn_)
                 {
 
-                    // ! GRIDMAP TAKING
-                    grid_map_.clearAll();
+                    auto cnn_input = std::make_shared<std::vector<torch::jit::IValue>>();
 
-                    grid_map::GridMap xy_grid_map;
-                    grid_map::Matrix obstacles_grid_map_;
-
-                    if (grid_map::GridMapRosConverter::fromMessage(grid_map_msg, grid_map_))
-                    {
-
-                        obstacles_grid_map_ = grid_map_.get("obstacles");
-
-                        xy_grid_map.setGeometry(grid_map::Length(10.0, 10.0), grid_map_.getResolution(), grid_map::Position(0.0, 0.0));
-                        xy_grid_map.setFrameId("base_footprint");
-                        xy_grid_map.add("obstacles");
-                        xy_grid_map["obstacles"].setConstant(0.0);
-
-                        // ! OBSTACLES
-
-                        for (grid_map::GridMapIterator iterator(xy_grid_map); !iterator.isPastEnd(); ++iterator)
-                        {
-                            const grid_map::Index index(*iterator);
-                            grid_map::Position val_pos;
-                            xy_grid_map.getPosition(index, val_pos);
-
-                            // ===================================
-
-                            grid_map::Position obs_pos(val_pos[0] + start[0], val_pos[1] + start[1]);
-                            grid_map::Index obs_index;
-                            grid_map_.getIndex(obs_pos, obs_index);
-
-                            double value = obstacles_grid_map_(obs_index(0), obs_index(1));
-                            if (value > 20)
-                            {
-                                xy_grid_map.at("obstacles", index) = 1.0;
-                            }
-                        }
-
-                        // ! RELEVANT AGENTS
-
-                        for (int i = 0; i < relevant_agents_vector_.size(); i++)
-                        {
-                            double agent_x = relevant_agents_vector_[i].pose.position.x;
-                            double agent_y = relevant_agents_vector_[i].pose.position.y;
-
-                            agent_x = agent_x - start[0];
-                            agent_y = agent_y - start[1];
-
-                            grid_map::Position pos(agent_x, agent_y);
-                            grid_map::Index index;
-                            xy_grid_map.getIndex(pos, index);
-                            xy_grid_map.at("obstacles", index) = 5.0;
-                        }
-
-                        // ! START
-
-                        grid_map::Index start_index;
-                        xy_grid_map.getIndex(grid_map::Position(0.0, 0.0), start_index);
-                        xy_grid_map.at("obstacles", start_index) = 2.0;
-
-                        // ! GOAL
-
-                        grid_map::Index goal_index;
-                        xy_grid_map.getIndex(grid_map::Position(goal[0] - start[0], goal[1] - start[1]), goal_index);
-                        xy_grid_map.at("obstacles", goal_index) = 3.0;
-                    }
-
-                    // ======================================================
-
-                    torch::Tensor map_tensor;
-                    map_tensor = gridMapToTensor(xy_grid_map.get("obstacles")).to(device);
-                    map_tensor = map_tensor.unsqueeze(0);
-
-                    // map_tensor = torch::zeros({1, 3, 100, 100}, torch::TensorOptions().dtype(torch::kFloat32)).to(device);
-
-                    std::vector<torch::IValue> cnn_input;
-
-                    torch::Tensor robot_size_tensor = torch::tensor({0.35}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
-                    torch::Tensor start_yaw_tensor = torch::tensor({1.0}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
-                    torch::Tensor goal_yaw_tensor = torch::tensor({1.0}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
-
-                    map_tensor.set_requires_grad(false);
-                    robot_size_tensor.set_requires_grad(false);
-                    start_yaw_tensor.set_requires_grad(false);
-                    goal_yaw_tensor.set_requires_grad(false);
-
-                    cnn_input.push_back(map_tensor);
-                    cnn_input.push_back(robot_size_tensor);
-                    cnn_input.push_back(start_yaw_tensor);
-                    cnn_input.push_back(goal_yaw_tensor);
-
-                    // auto cnn_input = std::make_shared<std::vector<torch::jit::IValue>>();
-
-                    // getLocalInputs(start, goal, relevant_agents_, grid_map_msg, cnn_input);
+                    getLocalInputs(start, goal, grid_map_msg, cnn_input);
                     torch::NoGradGuard no_grad_guard;
 
-                    torch::Tensor xy_inference_tensor = xy_module_.forward(cnn_input).toTensor().detach();
-                    // torch::Tensor xy_inference_tensor = xy_module_.forward(*cnn_input).toTensor().detach();
+                    torch::Tensor xy_inference_tensor = xy_module_.forward(*cnn_input).toTensor().detach();
 
                     inferences_gridmap->add("xy_inference");
 
@@ -1521,28 +1424,17 @@ void OnlinePlannFramework::planningTimerCallback()
 
                     (*inferences_gridmap)["xy_inference"] = xy_inference_gridmap;
 
-                    // xy_inference_tensor.detach();
-                    // xy_inference_tensor.to(torch::kCPU);
-
-                    // xy_inference_tensor = torch::Tensor(); // Reset the tensor to an empty state
-
                     if (use_orientation_cnn_)
                     {
 
-                        torch::Tensor yaw_inference_tensor = yaw_module_.forward(cnn_input).toTensor().detach();
+                        torch::Tensor yaw_inference_tensor = yaw_module_.forward(*cnn_input).toTensor().detach();
 
                         inferences_gridmap->add("yaw_inference");
 
                         grid_map::Matrix yaw_inference_gridmap = tensorToGridMapMatrix(yaw_inference_tensor);
 
                         (*inferences_gridmap)["yaw_inference"] = yaw_inference_gridmap;
-
-                        // yaw_inference_tensor.detach();
-                        // yaw_inference_tensor.to(torch::kCPU);
-
-                        // yaw_inference_tensor = torch::Tensor(); // Reset the tensor to an empty state
                     }
-                    // cnn_input.clear(); // Clear the vector itself
                 }
 
                 //=======================================================================
@@ -2213,7 +2105,7 @@ std::vector<double> OnlinePlannFramework::matrixToVector(const grid_map::Matrix 
     return vec;
 }
 
-void OnlinePlannFramework::getLocalInputs(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map_msg, std::shared_ptr<std::vector<torch::jit::IValue>> &inputs)
+void OnlinePlannFramework::getLocalInputs(const std::vector<double> start, const std::vector<double> goal, const grid_map_msgs::msg::GridMap grid_map_msg, std::shared_ptr<std::vector<torch::jit::IValue>> &inputs)
 {
     grid_map::GridMap grid_map;
     grid_map::GridMap xy_grid_map;
@@ -2276,6 +2168,12 @@ void OnlinePlannFramework::getLocalInputs(const std::vector<double> start, const
 
     torch::Device device = torch::kCUDA;
     prepareInputs(xy_grid_map["obstacles"], 0.35, wrapAngle(start[2]), wrapAngle(goal[2]), device, inputs);
+
+    // cv::Mat train_image;
+    // grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "obstacles", CV_8U, 0.0, 8.0, train_image);
+    // // cv::applyColorMap(train_iemage, train_image, cv::COLORMAP_JET);
+
+    // cv::imwrite("input.png", train_image);
 }
 
 torch::Tensor OnlinePlannFramework::gridMapToTensor(const grid_map::Matrix &matrix)
@@ -2300,54 +2198,27 @@ torch::Tensor OnlinePlannFramework::gridMapToTensor(const grid_map::Matrix &matr
     // Step 5: Concatenate the original tensor with the zero channels along the channel dimension
     torch::Tensor result_tensor = torch::cat({original_tensor, zero_channel, zero_channel}, 0);
 
+    // torch::Tensor first_channel = result_tensor[0];
+
+    // // Scale the values and convert to CV_8U for OpenCV
+    // first_channel = first_channel.mul(255).clamp(0, 255).to(torch::kU8);
+
+    // // Convert the tensor to a cv::Mat
+    // cv::Mat mat_image(first_channel.size(0), first_channel.size(1), CV_8U, first_channel.data_ptr());
+
+    // // Save the image
+    // std::string test_filename = "tensor_input.png";
+    // cv::imwrite(test_filename, mat_image);
+
     return result_tensor;
 }
 
-// void OnlinePlannFramework::gridMapToTensor(const grid_map::Matrix &matrix, torch::Tensor *output_tensor)
-// {
-//     // Ensure the output_tensor is not null
-//     if (!output_tensor)
-//     {
-//         throw std::invalid_argument("output_tensor pointer is null");
-//     }
-
-//     // Create the tensor with the correct options and size
-//     torch::TensorOptions options = torch::TensorOptions().dtype(torch::kFloat32);
-
-//     // Resize the tensor to the appropriate dimensions
-//     *output_tensor = torch::zeros({1, matrix.rows(), matrix.cols()}, torch::kFloat32);
-
-//     // Step 1: Copy data from grid_map::Matrix into the tensor
-//     auto &tensor_ref = *output_tensor;
-//     for (int i = 0; i < matrix.rows(); ++i)
-//     {
-//         for (int j = 0; j < matrix.cols(); ++j)
-//         {
-//             tensor_ref[0][i][j] = matrix(i, j); // Copy data into the tensor
-//         }
-//     }
-
-//     // Step 2: Create two additional channels of zeros
-//     torch::Tensor zero_channel = torch::zeros({1, matrix.rows(), matrix.cols()}, options);
-
-//     // Step 3: Concatenate the original tensor with the zero channels along the channel dimension
-//     *output_tensor = torch::cat({tensor_ref, zero_channel, zero_channel}, 0);
-// }
-
 void OnlinePlannFramework::prepareInputs(const grid_map::Matrix &matrix, double robot_size, double start_yaw, double goal_yaw, torch::Device device, std::shared_ptr<std::vector<torch::jit::IValue>> &inputs)
 {
-    // torch::Tensor map_tensor;
-    // gridMapToTensor(matrix, &map_tensor);
+    torch::Tensor map_tensor;
+    map_tensor = gridMapToTensor(matrix).to(device);
 
-    // map_tensor.to(device);
-
-    // map_tensor = map_tensor.unsqueeze(0);
-    // torch::Tensor map_tensor;
-    // map_tensor = gridMapToTensor(matrix).to(device);
-
-    // map_tensor = map_tensor.unsqueeze(0);
-
-    torch::Tensor map_tensor = torch::zeros({1, 3, 100, 100}, torch::TensorOptions().dtype(torch::kFloat32)).to(device);
+    map_tensor = map_tensor.unsqueeze(0);
 
     torch::Tensor robot_size_tensor = torch::tensor({robot_size}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
     torch::Tensor start_yaw_tensor = torch::tensor({start_yaw}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
@@ -2358,7 +2229,6 @@ void OnlinePlannFramework::prepareInputs(const grid_map::Matrix &matrix, double 
     start_yaw_tensor.set_requires_grad(false);
     goal_yaw_tensor.set_requires_grad(false);
 
-    // inputs->push_back({map_tensor});
     inputs->push_back(map_tensor);
     inputs->push_back(robot_size_tensor);
     inputs->push_back(start_yaw_tensor);
@@ -2400,6 +2270,8 @@ grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const torch::Tensor
     {
         tensor_2d = tensor_2d.contiguous();
     }
+
+    tensor_2d = tensor_2d.t();
 
     // Iterate through the tensor and copy each value to the matrix
     for (int i = 0; i < rows; ++i)

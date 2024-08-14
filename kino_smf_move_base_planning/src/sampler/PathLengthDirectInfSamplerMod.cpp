@@ -92,11 +92,35 @@ namespace ompl
             if (use_position_cnn_)
             {
                 xy_inference_ = inferences_->get("xy_inference");
+
+                // int max_value = 1.0;
+                // int min_value = 0.0;
+
+                // cv::Mat mat_image(xy_inference_.rows(), xy_inference_.cols(), CV_32F, const_cast<float *>(xy_inference_.data()));
+
+                // // Step 2: Normalize/scale the matrix values to the range [0, 255] (for 8-bit images)
+                // cv::Mat scaled_image;
+                // mat_image.convertTo(scaled_image, CV_8U, 255.0 / (max_value - min_value), -min_value * 255.0 / (max_value - min_value));
+
+                // // Step 3: Save the image as a grayscale PNG file
+                // cv::imwrite("xy.png", scaled_image);
             }
 
             if (use_orientation_cnn_)
             {
                 yaw_inference_ = inferences_->get("yaw_inference");
+
+                // int max_value = 8.0;
+                // int min_value = 0.0;
+
+                // cv::Mat mat_image(yaw_inference_.rows(), yaw_inference_.cols(), CV_32F, const_cast<float *>(yaw_inference_.data()));
+
+                // // Step 2: Normalize/scale the matrix values to the range [0, 255] (for 8-bit images)
+                // cv::Mat scaled_image;
+                // mat_image.convertTo(scaled_image, CV_8U, 255.0 / (max_value - min_value), -min_value * 255.0 / (max_value - min_value));
+
+                // // Step 3: Save the image as a grayscale PNG file
+                // cv::imwrite("yaw.png", scaled_image);
             }
 
             if (!probDefn_->getGoal()->hasType(ompl::base::GOAL_SAMPLEABLE_REGION))
@@ -302,11 +326,16 @@ namespace ompl
 
                         if (!checkXYInference(sample->getX(), sample->getY(), start_))
                         {
+                            // std::cout << "SAMPLE REJECTED" << std::endl;
                             return false;
                         }
 
+                        // std::cout << "SAMPLE ACCEPTED" << std::endl;
+
                         if (use_orientation_cnn_)
                         {
+
+                            // std::cout << "USING ORIENTATION" << std::endl;
                             // check if orientation should be obtained and then get the angle
                             double rand_orient = rng_.uniform01();
                             if (rand_orient < orientation_chance_)
@@ -320,6 +349,7 @@ namespace ompl
                         }
                         return found_sample;
                     }
+                    // std::cout << "UNIFORM SAMPLE" << std::endl;
                 }
 
                 return found_sample;
