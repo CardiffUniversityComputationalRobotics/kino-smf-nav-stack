@@ -91,12 +91,12 @@ namespace ompl
 
             if (use_position_cnn_)
             {
-                xy_inference_ = (*inferences_)["xy_inference"];
+                xy_inference_ = inferences_->get("xy_inference");
             }
 
             if (use_orientation_cnn_)
             {
-                yaw_inference_ = (*inferences_)["yaw_inference"];
+                yaw_inference_ = inferences_->get("yaw_inference");
             }
 
             if (!probDefn_->getGoal()->hasType(ompl::base::GOAL_SAMPLEABLE_REGION))
