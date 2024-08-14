@@ -11,7 +11,6 @@ from kino_smf_move_base_control.node import Node
 import time
 from tf2_ros import TransformListener, Buffer
 
-move_tolerance = 0.1
 scan_tolerance_front = 0.4
 scan_tolerance_side = 0.3
 rotate_tolerance = 0.004
@@ -31,6 +30,8 @@ class PathFollower:
         self.goal = PoseStamped()
 
         self.following_path = []
+
+        self.goal_available = False
 
         self.is_shutdown_initiated = False
         self.is_moving = False
@@ -98,6 +99,7 @@ class PathFollower:
 
     def goal_callback(self, data: PoseStamped):
         """Obtain goal from query"""
+        self.goal_available = True
         self.goal = Node.from_pose(data.pose)
 
     def robot_pose_callback(self, data: Odometry):
@@ -213,7 +215,7 @@ class PathFollower:
 
         self.is_obstacle_ahead = False
 
-    def move_to_point(self, point: Node):
+    def move_to_point(self, point: Node, move_tolerance=0.2):
         vel_msg = Twist()
         vel_msg.linear.x = float(self.max_trans_vel)
 
@@ -303,6 +305,18 @@ def main(args=None):
             rclpy.spin_once(controller.node_)
             if len(controller.following_path) > 0:
                 controller.follow_path()
+
+            elif controller.goal_available:
+                if (
+                    math.sqrt(
+                        math.pow(controller.goal.x - controller.robot_position.x, 2)
+                        + math.pow(controller.goal.y - controller.robot_position.y, 2)
+                    )
+                    < controller.goal_tolerance + 0.4
+                ):
+                    controller.move_to_point(controller.goal, move_tolerance=0.05)
+                    controller.rotate_to_goal(controller.goal)
+                    controller.velocity_publisher.publish(Twist())
 
     except KeyboardInterrupt:
         pass
