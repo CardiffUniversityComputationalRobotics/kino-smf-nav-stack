@@ -37,10 +37,10 @@ LocalGridMapStateValidityCheckerSE2::LocalGridMapStateValidityCheckerSE2(const o
 
     try
     {
-        full_grid_map_ = grid_map_["full"];
-        comfort_grid_map_ = grid_map_["comfort"];
-        social_heatmap_grid_map_ = grid_map_["social_heatmap"];
-        obstacles_grid_map_ = grid_map_["obstacles"];
+        full_grid_map_ = grid_map_.get("full");
+        comfort_grid_map_ = grid_map_.get("comfort");
+        social_heatmap_grid_map_ = grid_map_.get("social_heatmap");
+        obstacles_grid_map_ = grid_map_.get("obstacles");
     }
     catch (...)
     {
