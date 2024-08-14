@@ -1429,7 +1429,7 @@ void OnlinePlannFramework::planningTimerCallback()
                 //=======================================================================
                 ob::PlannerStatus solved_local = simple_setup_local_->solve(solving_time_ * (1 - (global_time_percent_ / 100)));
 
-                if (solved_local && simple_setup_local_->haveExactSolutionPath())
+                if (solved_local && solved_local == ompl::base::PlannerStatus::EXACT_SOLUTION)
                 {
 
                     solution_found = true;
