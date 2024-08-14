@@ -1397,7 +1397,7 @@ void OnlinePlannFramework::planningTimerCallback()
 
                     grid_map::Matrix xy_inference_gridmap = tensorToGridMapMatrix(xy_inference_tensor);
 
-                    (*inferences_gridmap)["xy_inference"] = xy_inference;
+                    (*inferences_gridmap)["xy_inference"] = xy_inference_gridmap;
 
                     if (use_orientation_cnn_)
                     {
