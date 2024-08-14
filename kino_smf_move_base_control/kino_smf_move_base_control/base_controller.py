@@ -1,15 +1,14 @@
 import rclpy
 import rclpy.node
 from geometry_msgs.msg import Twist, PoseStamped
-from nav_msgs.msg import Path
+from nav_msgs.msg import Path, Odometry
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Bool
 from math import atan2, pi
 import math
 from numpy import nanmin
-from path_follower.node import Node
+from kino_smf_move_base_control.node import Node
 import time
-from tf2_msgs.msg import TFMessage
 from tf2_ros import TransformListener, Buffer
 
 move_tolerance = 0.2
@@ -77,7 +76,7 @@ class PathFollower:
             Bool, "/stop_motion", self.stop_motion_callback, 1
         )
         self.start_subscriber = self.node_.create_subscription(
-            TFMessage, "/tf", self.robot_pose_callback, 1
+            Odometry, "/odom", self.robot_pose_callback, 1
         )
         self.goal_subscriber = self.node_.create_subscription(
             PoseStamped, self.goal_topic, self.goal_callback, 1
@@ -101,27 +100,19 @@ class PathFollower:
         """Obtain goal from query"""
         self.goal = Node.from_pose(data.pose)
 
-    def robot_pose_callback(self, data: TFMessage):
+    def robot_pose_callback(self, data: Odometry):
         """Listens to robot current pose"""
-        try:
-            transform = self.tf_buffer.lookup_transform(
-                "map", "base_link", rclpy.time.Time()
-            )
-            position = transform.transform.translation
-            quaternion = transform.transform.rotation
-        except:
-            return
 
         position = [
-            position.x,
-            position.y,
-            position.z,
+            data.pose.pose.position.x,
+            data.pose.pose.position.y,
+            data.pose.pose.position.z,
         ]
         orientation = [
-            quaternion.x,
-            quaternion.y,
-            quaternion.z,
-            quaternion.w,
+            data.pose.pose.orientation.x,
+            data.pose.pose.orientation.y,
+            data.pose.pose.orientation.z,
+            data.pose.pose.orientation.w,
         ]
 
         self.robot_position = Node.from_tf(position, orientation)
