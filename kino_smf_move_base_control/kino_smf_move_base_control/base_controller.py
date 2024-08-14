@@ -11,7 +11,7 @@ from kino_smf_move_base_control.node import Node
 import time
 from tf2_ros import TransformListener, Buffer
 
-move_tolerance = 0.2
+move_tolerance = 0.1
 scan_tolerance_front = 0.4
 scan_tolerance_side = 0.3
 rotate_tolerance = 0.004
@@ -132,9 +132,6 @@ class PathFollower:
         nearest_node = 0
         distance = float("inf")
 
-        if len(path.poses) > 0:
-            self.goal = Node.from_pose(path.poses[-1].pose)
-
         for i in range(0, len(path.poses)):
             node = Node.from_pose(path.poses[i].pose)
             node_path.append(node)
@@ -194,6 +191,8 @@ class PathFollower:
             # self.goal_reached_publisher.publish(Bool(data=True))
             self.node_.get_logger().info("Goal has been reached")
             self.is_moving = False
+        else:
+            self.velocity_publisher.publish(Twist())  # Stopping robot
 
     def go_back(self):
         current_distance = 0.0
