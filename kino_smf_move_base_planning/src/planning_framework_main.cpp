@@ -124,12 +124,12 @@ public:
     //! Callback for getting relevant agents
     void relevantAgentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agents_msg);
     //! generate input for network
-    std::vector<torch::jit::IValue> getLocalInputs(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map_msg);
+    std::vector<torch::IValue> getLocalInputs(const std::vector<double> start, const std::vector<double> goal, pedsim_msgs::msg::AgentStates::SharedPtr agent_states, const grid_map_msgs::msg::GridMap grid_map_msg);
     //! gridmap to tensor
     torch::Tensor gridMapToTensor(const grid_map::Matrix &matrix);
-    grid_map::Matrix tensorToGridMapMatrix(const at::Tensor &tensor);
-    std::vector<double> tensorToVector(const at::Tensor &tensor);
-    std::vector<torch::jit::IValue> prepareInputs(const grid_map::Matrix &matrix, double robot_size, double start_yaw, double goal_yaw, torch::Device device);
+    grid_map::Matrix tensorToGridMapMatrix(const torch::Tensor &tensor);
+    std::vector<double> tensorToVector(const torch::Tensor &tensor);
+    std::vector<torch::IValue> prepareInputs(const grid_map::Matrix &matrix, double robot_size, double start_yaw, double goal_yaw, torch::Device device);
     double wrapAngle(double angle);
     std::vector<double> matrixToVector(const grid_map::Matrix &matrix);
 
@@ -227,44 +227,44 @@ OnlinePlannFramework::OnlinePlannFramework()
 
     // ! DECLARE PARAMETERS
     this->declare_parameter("world_frame", rclcpp::ParameterValue(std::string("map")));
-    this->declare_parameter("planning_bounds_x", rclcpp::ParameterValue(std::vector<double>{50.0, 50.0}));
-    this->declare_parameter("planning_bounds_y", rclcpp::ParameterValue(std::vector<double>{50.0, 50.0}));
-    this->declare_parameter("start_state", rclcpp::ParameterValue(std::vector<double>{0.0, 0.0}));
-    this->declare_parameter("goal_state", rclcpp::ParameterValue(std::vector<double>{0.0, 0.0, 0.0}));
-    this->declare_parameter("timer_period", rclcpp::ParameterValue(1.0));
-    this->declare_parameter("solving_time", rclcpp::ParameterValue(1.0));
-    this->declare_parameter("opport_collision_check", rclcpp::ParameterValue(false));
-    this->declare_parameter("planner_name", rclcpp::ParameterValue(std::string("RRT")));
-    this->declare_parameter("reuse_last_best_solution", rclcpp::ParameterValue(false));
-    this->declare_parameter("local_reuse_last_best_solution", rclcpp::ParameterValue(false));
-    this->declare_parameter("optimization_objective", rclcpp::ParameterValue(std::string("PathLength")));
+    this->declare_parameter("planning_bounds_x", rclcpp::ParameterValue(std::vector<double>{-50.0, 50.0}));
+    this->declare_parameter("planning_bounds_y", rclcpp::ParameterValue(std::vector<double>{-50.0, 50.0}));
+    this->declare_parameter("start_state", rclcpp::ParameterValue(std::vector<double>{0.0, 0.0, 0.0}));
+    this->declare_parameter("goal_state", rclcpp::ParameterValue(std::vector<double>{5.0, 0.0, 0.0}));
+    this->declare_parameter("timer_period", rclcpp::ParameterValue(0.52));
+    this->declare_parameter("solving_time", rclcpp::ParameterValue(0.5));
+    this->declare_parameter("opport_collision_check", rclcpp::ParameterValue(true));
+    this->declare_parameter("planner_name", rclcpp::ParameterValue(std::string("RRTstarMod")));
+    this->declare_parameter("reuse_last_best_solution", rclcpp::ParameterValue(true));
+    this->declare_parameter("local_reuse_last_best_solution", rclcpp::ParameterValue(true));
+    this->declare_parameter("optimization_objective", rclcpp::ParameterValue(std::string("SocialHeatmap")));
     this->declare_parameter("motion_cost_interpolation", rclcpp::ParameterValue(false));
-    this->declare_parameter("odometry_topic", rclcpp::ParameterValue(std::string("odom")));
-    this->declare_parameter("query_goal_topic", rclcpp::ParameterValue(std::string("query_goal")));
-    this->declare_parameter("goto_action", rclcpp::ParameterValue(std::string("go_action")));
-    this->declare_parameter("solution_path_topic", rclcpp::ParameterValue(std::string("solution_path")));
-    this->declare_parameter("dynamic_bounds", rclcpp::ParameterValue(false));
-    this->declare_parameter("xy_goal_tolerance", rclcpp::ParameterValue(0.2));
-    this->declare_parameter("yaw_goal_tolerance", rclcpp::ParameterValue(0.1));
+    this->declare_parameter("odometry_topic", rclcpp::ParameterValue(std::string("/odom")));
+    this->declare_parameter("query_goal_topic", rclcpp::ParameterValue(std::string("/kino_smf_move_base_planner/query_goal")));
+    this->declare_parameter("goto_action", rclcpp::ParameterValue(std::string("/kino_smf_goto_action")));
+    this->declare_parameter("solution_path_topic", rclcpp::ParameterValue(std::string("/kino_smf_move_base_planner/solution_path")));
+    this->declare_parameter("dynamic_bounds", rclcpp::ParameterValue(true));
+    this->declare_parameter("xy_goal_tolerance", rclcpp::ParameterValue(0.1));
+    this->declare_parameter("yaw_goal_tolerance", rclcpp::ParameterValue(0.75));
     this->declare_parameter("visualize_tree", rclcpp::ParameterValue(false));
-    this->declare_parameter("robot_base_radius", rclcpp::ParameterValue(0.0));
-    this->declare_parameter("local_planner_name", rclcpp::ParameterValue(std::string("RRTstar")));
-    this->declare_parameter("local_xy_goal_tolerance", rclcpp::ParameterValue(0.2));
-    this->declare_parameter("local_optimization_objective", rclcpp::ParameterValue(std::string("PathLength")));
-    this->declare_parameter("local_path_range", rclcpp::ParameterValue(0.0));
-    this->declare_parameter("global_time_percent", rclcpp::ParameterValue(0.0));
+    this->declare_parameter("robot_base_radius", rclcpp::ParameterValue(0.35));
+    this->declare_parameter("local_planner_name", rclcpp::ParameterValue(std::string("SST")));
+    this->declare_parameter("local_xy_goal_tolerance", rclcpp::ParameterValue(1.0));
+    this->declare_parameter("local_optimization_objective", rclcpp::ParameterValue(std::string("SocialComfort")));
+    this->declare_parameter("local_path_range", rclcpp::ParameterValue(4.0));
+    this->declare_parameter("global_time_percent", rclcpp::ParameterValue(10.0));
     this->declare_parameter("max_trans_vel", rclcpp::ParameterValue(0.3));
-    this->declare_parameter("max_rot_vel", rclcpp::ParameterValue(0.8));
-    this->declare_parameter("grid_map_service", rclcpp::ParameterValue(std::string("grid_map_service")));
-    this->declare_parameter("local_use_social_heatmap", rclcpp::ParameterValue(true));
+    this->declare_parameter("max_rot_vel", rclcpp::ParameterValue(1.2));
+    this->declare_parameter("grid_map_service", rclcpp::ParameterValue(std::string("/get_grid_map")));
+    this->declare_parameter("local_use_social_heatmap", rclcpp::ParameterValue(false));
 
     // learning model use parameters
-    this->declare_parameter("position_model_path", rclcpp::ParameterValue(std::string("position_model.pth")));
-    this->declare_parameter("orientation_model_path", rclcpp::ParameterValue(std::string("orientation_model.pth")));
-    this->declare_parameter("use_position_cnn", rclcpp::ParameterValue(false));
-    this->declare_parameter("use_orientation_cnn", rclcpp::ParameterValue(false));
+    this->declare_parameter("position_model_path", rclcpp::ParameterValue(std::string("/home/steven/trained_model/model_xy_0.0001_final.pth")));
+    this->declare_parameter("orientation_model_path", rclcpp::ParameterValue(std::string("/home/steven/trained_model/model_yaw_0.1_final_artifact_mse.pth")));
+    this->declare_parameter("use_position_cnn", rclcpp::ParameterValue(true));
+    this->declare_parameter("use_orientation_cnn", rclcpp::ParameterValue(true));
     this->declare_parameter("rejection_chance", rclcpp::ParameterValue(0.5));
-    this->declare_parameter("orientation_chance", rclcpp::ParameterValue(0.5));
+    this->declare_parameter("orientation_chance", rclcpp::ParameterValue(1.0));
 
     // ! GET PARAMETERS
     world_frame_ = this->get_parameter("world_frame").as_string();
@@ -641,11 +641,16 @@ void OnlinePlannFramework::planWithSimpleSetup()
 
     // ! loading torchscript model
 
+    torch::Device device = torch::kCUDA;
+
     if (use_position_cnn_)
     {
         try
         {
             xy_module_ = torch::jit::load(position_model_path_);
+            xy_module_.to(device);
+            torch::NoGradGuard no_grad_guard;
+            xy_module_.eval();
         }
         catch (const c10::Error &e)
         {
@@ -659,6 +664,9 @@ void OnlinePlannFramework::planWithSimpleSetup()
         try
         {
             yaw_module_ = torch::jit::load(orientation_model_path_);
+            yaw_module_.to(device);
+            torch::NoGradGuard no_grad_guard;
+            yaw_module_.eval();
         }
         catch (const c10::Error &e)
         {
@@ -1379,22 +1387,27 @@ void OnlinePlannFramework::planningTimerCallback()
 
                 if (use_position_cnn_)
                 {
-                    std::vector<torch::jit::IValue> cnn_input;
-                    cnn_input = getLocalInputs(start, goal, relevant_agents_, grid_map_msg);
 
-                    at::Tensor xy_inference_tensor = xy_module_.forward(cnn_input).toTensor();
+                    std::vector<torch::IValue> cnn_input;
+                    cnn_input = getLocalInputs(start, goal, relevant_agents_, grid_map_msg);
+                    torch::NoGradGuard no_grad_guard;
+                    torch::Tensor xy_inference_tensor = xy_module_.forward(cnn_input).toTensor();
 
                     inferences_gridmap->add("xy_inference");
 
-                    (*inferences_gridmap)["xy_inference"] = tensorToGridMapMatrix(xy_inference_tensor);
+                    grid_map::Matrix xy_inference_gridmap = tensorToGridMapMatrix(xy_inference_tensor);
+
+                    (*inferences_gridmap)["xy_inference"] = xy_inference;
 
                     if (use_orientation_cnn_)
                     {
-                        at::Tensor yaw_inference_tensor = yaw_module_.forward(cnn_input).toTensor();
+                        torch::Tensor yaw_inference_tensor = yaw_module_.forward(cnn_input).toTensor();
 
                         inferences_gridmap->add("yaw_inference");
 
-                        (*inferences_gridmap)["yaw_inference"] = tensorToGridMapMatrix(yaw_inference_tensor);
+                        grid_map::Matrix yaw_inference_gridmap = tensorToGridMapMatrix(yaw_inference_tensor);
+
+                        (*inferences_gridmap)["yaw_inference"] = yaw_inference_gridmap;
                     }
                 }
 
@@ -2158,7 +2171,7 @@ torch::Tensor OnlinePlannFramework::gridMapToTensor(const grid_map::Matrix &matr
     return result_tensor;
 }
 
-grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const at::Tensor &tensor)
+grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const torch::Tensor &tensor)
 {
     // Ensure the tensor is 4-dimensional
     if (tensor.dim() != 4)
@@ -2180,7 +2193,7 @@ grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const at::Tensor &t
     int cols = tensor_2d.size(1);
 
     // Ensure the tensor is of type float
-    if (tensor_2d.scalar_type() != at::kFloat)
+    if (tensor_2d.scalar_type() != torch::kFloat)
     {
         throw std::invalid_argument("Tensor must be of type float.");
     }
@@ -2207,7 +2220,7 @@ grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const at::Tensor &t
     return matrix;
 }
 
-std::vector<double> OnlinePlannFramework::tensorToVector(const at::Tensor &tensor)
+std::vector<double> OnlinePlannFramework::tensorToVector(const torch::Tensor &tensor)
 {
     // Ensure the tensor is 4-dimensional
     if (tensor.dim() != 4)
@@ -2229,7 +2242,7 @@ std::vector<double> OnlinePlannFramework::tensorToVector(const at::Tensor &tenso
     int cols = tensor_2d.size(1);
 
     // Ensure the tensor is of type float
-    if (tensor_2d.scalar_type() != at::kFloat)
+    if (tensor_2d.scalar_type() != torch::kFloat)
     {
         throw std::invalid_argument("Tensor must be of type float.");
     }
@@ -2267,6 +2280,11 @@ std::vector<torch::jit::IValue> OnlinePlannFramework::prepareInputs(const grid_m
     torch::Tensor robot_size_tensor = torch::tensor({robot_size}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
     torch::Tensor start_yaw_tensor = torch::tensor({start_yaw}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
     torch::Tensor goal_yaw_tensor = torch::tensor({goal_yaw}, torch::TensorOptions().dtype(torch::kFloat32)).view({1, 1}).to(device);
+
+    map_tensor.set_requires_grad(false);
+    robot_size_tensor.set_requires_grad(false);
+    start_yaw_tensor.set_requires_grad(false);
+    goal_yaw_tensor.set_requires_grad(false);
 
     inputs.push_back(map_tensor);
     inputs.push_back(robot_size_tensor);
