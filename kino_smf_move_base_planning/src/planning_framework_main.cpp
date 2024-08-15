@@ -341,7 +341,7 @@ OnlinePlannFramework::OnlinePlannFramework()
     solution_path_control_pub_ = this->create_publisher<nav_msgs::msg::Path>(solution_path_topic_, 1);
     query_goal_pose_rviz_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("query_goal_pose_rviz", 1);
     query_goal_radius_rviz_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("query_goal_radius_rviz", 1);
-    num_nodes_pub_ = this->create_publisher<std_msgs::msg::Int32>("smf_num_nodes", 1);
+    num_nodes_pub_ = this->create_publisher<std_msgs::msg::Int32>("kino_smf_num_nodes", 1);
     goal_reached_pub_ = this->create_publisher<std_msgs::msg::Bool>("goal_reached", 1);
     sweep_motion_pub_ = this->create_publisher<std_msgs::msg::Bool>("sweep_motion", 1);
 
@@ -541,24 +541,8 @@ void OnlinePlannFramework::odomCallback(const nav_msgs::msg::Odometry::SharedPtr
 void OnlinePlannFramework::relevantAgentsCallback(const pedsim_msgs::msg::AgentStates::SharedPtr agents_msg)
 {
 
-    try
-    {
-
-        relevant_agents_vector_.clear();
-
-        // Check if the received message is valid
-        if (agents_msg->agent_states.empty())
-        {
-            RCLCPP_WARN(this->get_logger(), "Received empty AgentStates message.");
-        }
-
-        // Copy the data
-        relevant_agents_vector_ = agents_msg->agent_states;
-    }
-    catch (const std::exception &e)
-    {
-        RCLCPP_ERROR(this->get_logger(), "Exception caught in callback: %s", e.what());
-    }
+    relevant_agents_vector_.clear();
+    relevant_agents_vector_ = agents_msg->agent_states;
 }
 
 //! Control active callback.
@@ -2150,7 +2134,11 @@ void OnlinePlannFramework::getLocalInputs(const std::vector<double> start, const
             grid_map::Position pos(relevant_agents_vector_[i].pose.position.x - start[0], relevant_agents_vector_[i].pose.position.y - start[1]);
             grid_map::Index index;
             xy_grid_map.getIndex(pos, index);
-            xy_grid_map.at("obstacles", index) = 5.0;
+
+            if (xy_grid_map.getIndex(pos, index))
+            {
+                xy_grid_map.at("obstacles", index) = 5.0;
+            }
         }
 
         // ! START
