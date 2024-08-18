@@ -20,6 +20,17 @@ include_directories(${CUDA_INCLUDE_DIRS})
 set(Torch_DIR "/home/sasm/libtorch-cxx11-abi-shared-with-deps-2.4.0+cu118/libtorch/share/cmake/Torch")
 find_package(Torch REQUIRED)
 
+
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBFCL REQUIRED "fcl>=0.7.0")
+# replace LIBFCL_LIBRARIES with full paths to the libraries
+set(LIBFCL_LIBRARIES_FULL "")
+foreach(LIBFCL_LIBRARY ${LIBFCL_LIBRARIES})
+  find_library(${LIBFCL_LIBRARY}_LIB ${LIBFCL_LIBRARY} ${LIBFCL_LIBRARY_DIRS})
+  list(APPEND LIBFCL_LIBRARIES_FULL ${${LIBFCL_LIBRARY}_LIB})
+endforeach()
+set(LIBFCL_LIBRARIES "${LIBFCL_LIBRARIES_FULL}")
+
 # Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -40,7 +51,9 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(ompl REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(image_transport REQUIRED)
-
+find_package(OCTOMAP REQUIRED)
+find_package(octomap_msgs REQUIRED)
+find_package(octomap_server REQUIRED)
 
 # Include directories
 include_directories(
@@ -71,6 +84,10 @@ set(dependencies
     OMPL
     cv_bridge
     image_transport
+    octomap_msgs
+    octomap_server
+    OCTOMAP
+    LIBFCL
 )
 
 # Add executable
@@ -89,8 +106,8 @@ add_executable(kino_smf_move_base_planner
 )
 
 # Link libraries
-ament_target_dependencies(kino_smf_move_base_planner ${dependencies})
-target_link_libraries(kino_smf_move_base_planner ${OMPL_LIBRARIES} ${TORCH_LIBRARIES} ${CUDA_LIBRARIES})
+ament_target_dependencies(kino_smf_move_base_planner ${dependencies} ${fcl_LIBRARIES})
+target_link_libraries(kino_smf_move_base_planner ${OMPL_LIBRARIES} ${TORCH_LIBRARIES} ${CUDA_LIBRARIES} ${LIBFCL_LIBRARIES} ${OCTOMAP_LIBRARIES})
 
 # Set runtime path for CUDA libraries
 set_target_properties(kino_smf_move_base_planner PROPERTIES
