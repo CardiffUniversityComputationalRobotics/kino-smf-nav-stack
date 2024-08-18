@@ -846,12 +846,17 @@ void OnlinePlannFramework::planWithSimpleSetup()
 
     if (incoming_grid_map.exists("obstacles"))
     {
+
+        grid_map::Matrix &obstacles_data = incoming_grid_map["obstacles"];
+
         for (grid_map::GridMapIterator it(incoming_grid_map); !it.isPastEnd(); ++it)
         {
             grid_map::Position position;
             incoming_grid_map.getPosition(*it, position);
 
-            float obstacle_value = incoming_grid_map.at("obstacles", *it);
+            const grid_map::Index index(*it);
+
+            float obstacle_value = obstacles_data(index(0), index(1));
 
             // Only insert into the octomap if the obstacle value is greater than 0.2
             if (obstacle_value > 20)
@@ -872,12 +877,16 @@ void OnlinePlannFramework::planWithSimpleSetup()
 
     if (incoming_grid_map.exists("full"))
     {
+        grid_map::Matrix &full_data = incoming_grid_map["full"];
+
         for (grid_map::GridMapIterator it(incoming_grid_map); !it.isPastEnd(); ++it)
         {
             grid_map::Position position;
             incoming_grid_map.getPosition(*it, position);
 
-            float obstacle_value = incoming_grid_map.at("full", *it);
+            const grid_map::Index index(*it);
+
+            float obstacle_value = full_data(index(0), index(1));
 
             // Only insert into the octomap if the obstacle value is greater than 0.2
             if (obstacle_value > 20)
@@ -1134,12 +1143,16 @@ void OnlinePlannFramework::planningTimerCallback()
         if (incoming_grid_map.exists("obstacles"))
         {
 
+            grid_map::Matrix &obstacles_data = incoming_grid_map["obstacles"];
+
             for (grid_map::GridMapIterator it(incoming_grid_map); !it.isPastEnd(); ++it)
             {
                 grid_map::Position position;
                 incoming_grid_map.getPosition(*it, position);
 
-                float obstacle_value = incoming_grid_map.at("obstacles", *it);
+                const grid_map::Index index(*it);
+
+                float obstacle_value = obstacles_data(index(0), index(1));
 
                 if (obstacle_value > 20)
                 {
@@ -1160,12 +1173,16 @@ void OnlinePlannFramework::planningTimerCallback()
         if (incoming_grid_map.exists("full"))
         {
 
+            grid_map::Matrix &full_data = incoming_grid_map["full"];
+
             for (grid_map::GridMapIterator it(incoming_grid_map); !it.isPastEnd(); ++it)
             {
                 grid_map::Position position;
                 incoming_grid_map.getPosition(*it, position);
 
-                float obstacle_value = incoming_grid_map.at("full", *it);
+                const grid_map::Index index(*it);
+
+                float obstacle_value = full_data(index(0), index(1));
 
                 if (obstacle_value > 20)
                 {
