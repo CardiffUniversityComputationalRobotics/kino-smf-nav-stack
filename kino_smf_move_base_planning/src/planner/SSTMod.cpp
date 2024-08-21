@@ -436,7 +436,14 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
 
     double elapsed_time_double = elapsed_time.count();
 
-    outFile << elapsed_time_double << "," << first_cost << "," << solution->accCost_.value() << std::endl;
+    if (approximate)
+    {
+        outFile << 0 << "," << first_cost << "," << solution->accCost_.value() << std::endl;
+    }
+    else
+    {
+        outFile << elapsed_time_double << "," << first_cost << "," << solution->accCost_.value() << std::endl;
+    }
 
     outFile.close();
 

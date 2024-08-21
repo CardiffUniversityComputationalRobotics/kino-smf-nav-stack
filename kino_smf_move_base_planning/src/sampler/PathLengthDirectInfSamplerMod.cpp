@@ -327,10 +327,14 @@ namespace ompl
                         if (!checkXYInference(sample->getX(), sample->getY(), start_))
                         {
                             // std::cout << "SAMPLE REJECTED" << std::endl;
+                            // std::cout << sample->getX() << std::endl;
+                            // std::cout << sample->getY() << std::endl;
                             return false;
                         }
 
                         // std::cout << "SAMPLE ACCEPTED" << std::endl;
+                        // std::cout << sample->getX() << std::endl;
+                        // std::cout << sample->getY() << std::endl;
 
                         if (use_orientation_cnn_)
                         {
