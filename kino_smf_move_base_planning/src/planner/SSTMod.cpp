@@ -43,6 +43,10 @@
 #include "ompl/tools/config/SelfConfig.h"
 #include <limits>
 #include <chrono>
+#include <iostream>
+#include <fstream>
+
+using namespace std::chrono;
 
 ompl::control::SST::SST(const SpaceInformationPtr &si) : base::Planner(si, "SST")
 {
@@ -207,7 +211,7 @@ ompl::control::SST::Witness *ompl::control::SST::findClosestWitness(ompl::contro
 ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminationCondition &ptc)
 {
 
-    std::ofstream outFile("output.txt");
+    std::ofstream outFile("output.txt", std::ios::app);
 
     bool found_first_solution = false;
 
@@ -215,7 +219,7 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
 
     double first_cost;
 
-    auto start_time = std::chrono::steady_clock::now();
+    auto start_time = high_resolution_clock::now();
     // =================================================
 
     checkValidity();
@@ -334,8 +338,8 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
                     OMPL_INFORM("Found solution with cost %.2f", solution->accCost_.value());
                     if (!found_first_solution)
                     {
-                        auto current_time = std::chrono::steady_clock::now();
-                        elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time);
+                        auto current_time = high_resolution_clock::now();
+                        elapsed_time = duration_cast<microseconds>(current_time - start_time);
                         first_cost = solution->accCost_.value();
 
                         found_first_solution = true;
@@ -430,7 +434,9 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
 
     OMPL_INFORM("%s: Created %u states in %u iterations", getName().c_str(), nn_->size(), iterations);
 
-    outFile << elapsed_time << "," << first_cost << "," << solution->accCost_.value() << std::endl;
+    double elapsed_time_double = elapsed_time.count();
+
+    outFile << elapsed_time_double << "," << first_cost << "," << solution->accCost_.value() << std::endl;
 
     outFile.close();
 
