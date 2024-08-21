@@ -1427,6 +1427,7 @@ void OnlinePlannFramework::planningTimerCallback()
 
                 if (reuse_last_best_solution_)
                 {
+                    std::vector<const ob::State *> dummy_global_path_feedback;
 
                     //=======================================================================
                     // Set optimization objective
@@ -1436,7 +1437,7 @@ void OnlinePlannFramework::planningTimerCallback()
                             getPathLengthObjective(simple_setup_local_->getSpaceInformation()));
                     else if (local_optimization_objective_.compare("SocialComfort") == 0)
                         simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
-                            getSocialComfortObjective(simple_setup_local_->getSpaceInformation(), motion_cost_interpolation_, local_space, simple_setup_local_->getPlanner(), global_path_feedback, use_position_cnn_, use_orientation_cnn_, rejection_chance_, orientation_chance_, inferences_gridmap, start));
+                            getSocialComfortObjective(simple_setup_local_->getSpaceInformation(), motion_cost_interpolation_, local_space, simple_setup_local_->getPlanner(), dummy_global_path_feedback, use_position_cnn_, use_orientation_cnn_, rejection_chance_, orientation_chance_, inferences_gridmap, start));
                     else if (local_optimization_objective_.compare("SocialHeatmap") == 0) // Social Costmap
                         simple_setup_local_->getProblemDefinition()->setOptimizationObjective(
                             getSocialHeatmapObjective(simple_setup_local_->getSpaceInformation(), motion_cost_interpolation_));

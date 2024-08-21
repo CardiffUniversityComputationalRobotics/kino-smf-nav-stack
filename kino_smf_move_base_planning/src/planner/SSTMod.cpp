@@ -42,6 +42,7 @@
 #include "ompl/base/objectives/MechanicalWorkOptimizationObjective.h"
 #include "ompl/tools/config/SelfConfig.h"
 #include <limits>
+#include <chrono>
 
 ompl::control::SST::SST(const SpaceInformationPtr &si) : base::Planner(si, "SST")
 {
@@ -205,6 +206,18 @@ ompl::control::SST::Witness *ompl::control::SST::findClosestWitness(ompl::contro
 
 ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminationCondition &ptc)
 {
+
+    std::ofstream outFile("output.txt");
+
+    bool found_first_solution = false;
+
+    std::chrono::duration<double> elapsed_time;
+
+    double first_cost;
+
+    auto start_time = std::chrono::steady_clock::now();
+    // =================================================
+
     checkValidity();
     base::Goal *goal = pdef_->getGoal().get();
     auto *goal_s = dynamic_cast<base::GoalSampleableRegion *>(goal);
@@ -319,6 +332,14 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
                     prevSolutionCost_ = solution->accCost_;
 
                     OMPL_INFORM("Found solution with cost %.2f", solution->accCost_.value());
+                    if (!found_first_solution)
+                    {
+                        auto current_time = std::chrono::steady_clock::now();
+                        elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time);
+                        first_cost = solution->accCost_.value();
+
+                        found_first_solution = true;
+                    }
                     if (intermediateSolutionCallback)
                     {
                         // the callback requires a vector with const elements -> create a copy
@@ -408,6 +429,10 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
     delete rmotion;
 
     OMPL_INFORM("%s: Created %u states in %u iterations", getName().c_str(), nn_->size(), iterations);
+
+    outFile << elapsed_time << "," << first_cost << "," << solution->accCost_.value() << std::endl;
+
+    outFile.close();
 
     return {solved, approximate};
 }
