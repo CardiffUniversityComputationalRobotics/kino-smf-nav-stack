@@ -2259,7 +2259,7 @@ grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const torch::Tensor
         tensor_2d = tensor_2d.contiguous();
     }
 
-    tensor_2d = tensor_2d.t();
+    // tensor_2d = tensor_2d.t();
 
     // Iterate through the tensor and copy each value to the matrix
     for (int i = 0; i < rows; ++i)
