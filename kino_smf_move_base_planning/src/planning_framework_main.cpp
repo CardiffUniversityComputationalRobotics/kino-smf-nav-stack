@@ -903,7 +903,7 @@ void OnlinePlannFramework::planWithSimpleSetup()
         if (goal_available_)
             RCLCPP_INFO(this->get_logger(), "goal available");
         OnlinePlannFramework::planningTimerCallback();
-        // loop_rate.sleep();
+        loop_rate.sleep();
     }
 }
 
