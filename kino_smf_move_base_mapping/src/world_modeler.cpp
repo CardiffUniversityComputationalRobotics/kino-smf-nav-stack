@@ -14,6 +14,9 @@
 
 #include <world_modeler.hpp>
 
+#include <pcl/filters/radius_outlier_removal.h>
+#include <pcl/filters/statistical_outlier_removal.h>
+
 //!  Constructor.
 /*!
  * Load map parameters.
@@ -83,6 +86,13 @@ WorldModeler::WorldModeler()
     this->declare_parameter("add_max_ranges", add_max_ranges_);
     this->declare_parameter("minimum_range", minimum_range_);
 
+    this->declare_parameter("agent_filter_x_min", agent_filter_x_min_);
+    this->declare_parameter("agent_filter_x_max", agent_filter_x_max_);
+    this->declare_parameter("agent_filter_y_min", agent_filter_y_min_);
+    this->declare_parameter("agent_filter_y_max", agent_filter_y_max_);
+    this->declare_parameter("agent_filter_z_min", agent_filter_z_min_);
+    this->declare_parameter("agent_filter_z_max", agent_filter_z_max_);
+
     this->get_parameter("add_rays", add_rays_);
     this->get_parameter("resolution", octree_resol_);
     this->get_parameter("map_frame", map_frame_);
@@ -111,6 +121,13 @@ WorldModeler::WorldModeler()
     this->get_parameter("apply_filter", apply_filter_);
     this->get_parameter("add_max_ranges", add_max_ranges_);
     this->get_parameter("minimum_range", minimum_range_);
+
+    this->get_parameter("agent_filter_x_min", agent_filter_x_min_);
+    this->get_parameter("agent_filter_x_max", agent_filter_x_max_);
+    this->get_parameter("agent_filter_y_min", agent_filter_y_min_);
+    this->get_parameter("agent_filter_y_max", agent_filter_y_max_);
+    this->get_parameter("agent_filter_z_min", agent_filter_z_min_);
+    this->get_parameter("agent_filter_z_max", agent_filter_z_max_);
 
     this->set_parameter(rclcpp::Parameter("use_sim_time", true));
 
@@ -149,7 +166,7 @@ WorldModeler::WorldModeler()
             RCLCPP_WARN(this->get_logger(), "Cannot find tf from %s to %s: %s",
                         robot_frame_.c_str(), laser_scan_frame_.c_str(), ex.what());
         }
-        if (count > 10)
+        if (count > 100)
         {
             RCLCPP_ERROR(this->get_logger(), "No transform found. Aborting...");
             exit(-1);
@@ -270,7 +287,7 @@ WorldModeler::WorldModeler()
         laser_need_frames.push_back(fixed_frame_);
         laser_need_frames.push_back(robot_frame_);
 
-        laser_scan_sub_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::LaserScan>>(this, laser_scan_topic_);
+        laser_scan_sub_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::LaserScan>>(this, laser_scan_topic_, rclcpp::QoS(rclcpp::SensorDataQoS()).get_rmw_qos_profile());
         laser_scan_mn_ = std::make_shared<tf2_ros::MessageFilter<sensor_msgs::msg::LaserScan>>(
             *tf_buffer_,
             laser_scan_frame_,
@@ -408,8 +425,8 @@ void WorldModeler::laserScanCallback(const sensor_msgs::msg::LaserScan::SharedPt
     PCLPointCloud pc; // input cloud for filtering and ground-detection
     pcl::fromROSMsg(cloud_, pc);
 
-    float minX = -12, minY = -0.6, minZ = -0.6;
-    float maxX = 12, maxY = 0.6, maxZ = 0.6;
+    float minX = -0.6, minY = -0.6, minZ = -12.6;
+    float maxX = 0.6, maxY = 0.6, maxZ = 12.6;
 
     geometry_msgs::msg::TransformStamped transform;
 
@@ -502,8 +519,22 @@ void WorldModeler::pointCloudCallback(const sensor_msgs::msg::PointCloud2::Share
     PCLPointCloud pc; // input cloud for filtering and ground-detection
     pcl::fromROSMsg(*cloud, pc);
 
-    float minX = -0.6, minY = -0.6, minZ = -12;
-    float maxX = 0.6, maxY = 0.6, maxZ = 12;
+    // =====================================
+    pcl::StatisticalOutlierRemoval<PCLPoint> sor;
+    sor.setInputCloud(pc.makeShared());
+    sor.setMeanK(70);            // Number of neighbors
+    sor.setStddevMulThresh(1.0); // Standard deviation threshold
+    sor.filter(pc);
+    // // Filter speckles using Radius Outlier Removal
+    // pcl::RadiusOutlierRemoval<PCLPoint> ror;
+    // ror.setInputCloud(pc.makeShared());
+    // ror.setRadiusSearch(0.05);       // Radius to search for neighbors (in meters)
+    // ror.setMinNeighborsInRadius(20); // Minimum number of neighbors within the radius for a point to be kept
+    // ror.filter(pc);
+    // =====================================
+
+    float minX = agent_filter_x_min_, minY = agent_filter_y_min_, minZ = agent_filter_z_min_;
+    float maxX = agent_filter_x_max_, maxY = agent_filter_y_max_, maxZ = agent_filter_z_max_;
 
     // ROS_INFO_STREAM("ABOUT TO PROCESS AGENTS");
 
@@ -517,7 +548,7 @@ void WorldModeler::pointCloudCallback(const sensor_msgs::msg::PointCloud2::Share
 
             try
             {
-                transform = tf_buffer_->lookupTransform(cloud->header.frame_id, "agent_" + std::to_string(social_agents_in_radius_.agent_states[i].id), cloud->header.stamp);
+                transform = tf_buffer_->lookupTransform(point_cloud_frame_, "agent_" + std::to_string(social_agents_in_radius_.agent_states[i].id), tf2::TimePointZero);
 
                 tf2::Quaternion q(
                     transform.transform.rotation.x,
@@ -557,7 +588,7 @@ void WorldModeler::pointCloudCallback(const sensor_msgs::msg::PointCloud2::Share
         //        tf_listener_.lookupTransform(robot_frame_,
         //        laser_scan_msg->header.frame_id, t,
         //                                     tf_robot_to_laser_scan);
-        sensorToWorldTf = tf_buffer_->lookupTransform(fixed_frame_, cloud->header.frame_id, cloud->header.stamp);
+        sensorToWorldTf = tf_buffer_->lookupTransform(fixed_frame_, point_cloud_frame_, cloud->header.stamp);
     }
     catch (tf2::TransformException &ex)
     {
@@ -640,7 +671,7 @@ void WorldModeler::insertScan(const geometry_msgs::msg::Vector3 &sensorOriginTf,
     for (PCLPointCloud::const_iterator it = nonground.begin();
          it != nonground.end(); ++it)
     {
-        octomap::point3d point(it->x, it->y, it->z); // TODO
+        octomap::point3d point(it->x, it->y, it->z + (0.96 / 2)); // TODO
         // maxrange check
         if ((m_maxRange < 0.0) || ((point - sensorOrigin).norm() <= m_maxRange && (point - sensorOrigin).norm() >= m_minRange))
         {

@@ -220,6 +220,15 @@ private:
     // LaserScan => (x,y,z)
     laser_geometry::LaserProjection laser_scan_projector_;
 
+    // ====================
+
+    double agent_filter_x_min_;
+    double agent_filter_x_max_;
+    double agent_filter_y_min_;
+    double agent_filter_y_max_;
+    double agent_filter_z_min_;
+    double agent_filter_z_max_;
+
 protected:
     inline static void updateMinKey(const octomap::OcTreeKey &in,
                                     octomap::OcTreeKey &min)
