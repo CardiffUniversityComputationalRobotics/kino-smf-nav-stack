@@ -17,7 +17,7 @@ find_package(CUDA REQUIRED)
 include_directories(${CUDA_INCLUDE_DIRS})
 
 # Set Torch path
-set(Torch_DIR "/home/sasm/libtorch-cxx11-abi-shared-with-deps-2.4.0+cu118/libtorch/share/cmake/Torch")
+set(Torch_DIR /home/$ENV{USER}/libtorch-cxx11-abi-shared-with-deps-2.4.0+cu118/libtorch/share/cmake/Torch)
 find_package(Torch REQUIRED)
 
 # Find dependencies
