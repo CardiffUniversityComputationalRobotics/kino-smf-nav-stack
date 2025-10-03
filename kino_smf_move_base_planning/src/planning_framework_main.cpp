@@ -330,8 +330,8 @@ OnlinePlannFramework::OnlinePlannFramework()
     // control_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(control_active_topic_, 1, std::bind(&OnlinePlannFramework::controlActiveCallback, this, std::placeholders::_1));
 
     // relevant agents
-    auto qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
-    relevant_agents_sub_ = this->create_subscription<pedsim_msgs::msg::AgentStates>("relevant_agents", qos, std::bind(&OnlinePlannFramework::relevantAgentsCallback, this, std::placeholders::_1));
+    // auto qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
+    relevant_agents_sub_ = this->create_subscription<pedsim_msgs::msg::AgentStates>("/pedsim_simulator/simulated_agents", 1, std::bind(&OnlinePlannFramework::relevantAgentsCallback, this, std::placeholders::_1));
 
     //=======================================================================
     // ! Publishers
@@ -2119,10 +2119,14 @@ void OnlinePlannFramework::getLocalInputs(const std::vector<double> start, const
             grid_map::Index obs_index;
             grid_map.getIndex(obs_pos, obs_index);
 
-            double value = obstacles_grid_map_(obs_index(0), obs_index(1));
-            if (value > 20)
+            if (obs_index(0) >= 0 && obs_index(0) < obstacles_grid_map_.rows() &&
+                obs_index(1) >= 0 && obs_index(1) < obstacles_grid_map_.cols())
             {
-                xy_grid_map.at("obstacles", index) = 1.0;
+                double value = obstacles_grid_map_(obs_index(0), obs_index(1));
+                if (value > 20)
+                {
+                    xy_grid_map.at("obstacles", index) = 1.0;
+                }
             }
         }
 
@@ -2159,7 +2163,7 @@ void OnlinePlannFramework::getLocalInputs(const std::vector<double> start, const
 
     // cv::Mat train_image;
     // grid_map::GridMapCvConverter::toImage<unsigned char, 1>(xy_grid_map, "obstacles", CV_8U, 0.0, 8.0, train_image);
-    // // cv::applyColorMap(train_iemage, train_image, cv::COLORMAP_JET);
+    // cv::applyColorMap(train_iemage, train_image, cv::COLORMAP_JET);
 
     // cv::imwrite("input.png", train_image);
 }
