@@ -77,7 +77,7 @@ class PathFollower:
             Bool, "/stop_motion", self.stop_motion_callback, 1
         )
         self.start_subscriber = self.node_.create_subscription(
-            Odometry, "/odom", self.robot_pose_callback, 1
+            Odometry, "/cartographer_odom", self.robot_pose_callback, 1
         )
         self.goal_subscriber = self.node_.create_subscription(
             PoseStamped, self.goal_topic, self.goal_callback, 1
