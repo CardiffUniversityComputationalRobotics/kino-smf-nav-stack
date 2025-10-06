@@ -57,6 +57,7 @@
 #include <new_state_sampler.h>
 #include <informed_new_state_sampler.h>
 #include <ompl/base/samplers/informed/PathLengthDirectInfSampler.h>
+#include <ompl/control/SimpleDirectedControlSampler.h>
 #include <state_cost_objective.h>
 #include <state_validity_checker_grid_map_R2.h>
 #include <local_state_validity_checker_grid_map_SE2.h>
@@ -754,6 +755,14 @@ void OnlinePlannFramework::planWithSimpleSetup()
         local_planner = ob::PlannerPtr(new oc::RRT(si_local));
     else
     {
+
+        si_local->setDirectedControlSamplerAllocator(
+            [](const oc::SpaceInformation *si)
+            {
+                // Create a SimpleDirectedControlSampler that tests 10 controls per expansion
+                return std::make_shared<oc::SimpleDirectedControlSampler>(si, 5);
+            });
+
         local_planner = ob::PlannerPtr(new oc::SST(si_local));
         local_planner->as<oc::SST>()->setSelectionRadius(0.05);
         local_planner->as<oc::SST>()->setPruningRadius(0.001);
