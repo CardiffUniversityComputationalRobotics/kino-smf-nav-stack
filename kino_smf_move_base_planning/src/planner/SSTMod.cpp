@@ -217,6 +217,10 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
 
     std::chrono::duration<double> elapsed_time;
 
+    double first_solution_nodes;
+
+    double final_solution_nodes;
+
     double first_cost;
 
     auto start_time = high_resolution_clock::now();
@@ -342,6 +346,8 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
                         elapsed_time = duration_cast<microseconds>(current_time - start_time);
                         first_cost = solution->accCost_.value();
 
+                        first_solution_nodes = nn_->size();
+
                         found_first_solution = true;
                     }
                     if (intermediateSolutionCallback)
@@ -436,7 +442,9 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
 
     double elapsed_time_double = elapsed_time.count();
 
-    outFile << elapsed_time_double << "," << first_cost << "," << solution->accCost_.value() << std::endl;
+    final_solution_nodes = nn_->size();
+
+    outFile << elapsed_time_double << "," << first_cost << "," << first_solution_nodes << "," << solution->accCost_.value() << "," << final_solution_nodes << std::endl;
 
     outFile.close();
 
