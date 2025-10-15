@@ -66,6 +66,7 @@
 
 // smf base controller
 #include <nav_msgs/msg/path.hpp>
+#include <nav_msgs/msg/occupancy_grid.hpp>
 #include <kino_smf_move_base_msgs/action/goto2_d.hpp>
 
 // pedsim msgs
@@ -151,6 +152,7 @@ private:
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr num_nodes_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr sweep_motion_pub_;
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr inference_pub_;
 
     // ! action server
     // KinoSmfBaseGoToActionServer *goto_action_server_;
@@ -345,6 +347,7 @@ OnlinePlannFramework::OnlinePlannFramework()
     num_nodes_pub_ = this->create_publisher<std_msgs::msg::Int32>("kino_smf_num_nodes", 1);
     goal_reached_pub_ = this->create_publisher<std_msgs::msg::Bool>("goal_reached", 1);
     sweep_motion_pub_ = this->create_publisher<std_msgs::msg::Bool>("sweep_motion", 1);
+    inference_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("inference", 1);
 
     // ! SERVICE CLIENT WAIT
     grid_map_client_ = this->create_client<GetGridMap>(grid_map_service_);
@@ -1428,6 +1431,10 @@ void OnlinePlannFramework::planningTimerCallback()
 
                         (*inferences_gridmap)["yaw_inference"] = yaw_inference_gridmap;
                     }
+                    nav_msgs::msg::OccupancyGrid occupancy_grid_msg;
+                    grid_map::GridMapRosConverter::toOccupancyGrid(*inferences_gridmap, "xy_inference", 0.0, 1.0, occupancy_grid_msg);
+
+                    inference_pub_->publish(occupancy_grid_msg);
                 }
 
                 //=======================================================================
@@ -2269,7 +2276,7 @@ grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const torch::Tensor
         tensor_2d = tensor_2d.contiguous();
     }
 
-    tensor_2d = tensor_2d.t();
+    // tensor_2d = tensor_2d.t();
 
     // Iterate through the tensor and copy each value to the matrix
     for (int i = 0; i < rows; ++i)

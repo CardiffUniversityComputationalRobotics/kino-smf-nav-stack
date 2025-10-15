@@ -442,9 +442,14 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
 
     double elapsed_time_double = elapsed_time.count();
 
-    final_solution_nodes = nn_->size();
-
-    outFile << elapsed_time_double << "," << first_cost << "," << first_solution_nodes << "," << solution->accCost_.value() << "," << final_solution_nodes << std::endl;
+    if (approximate)
+    {
+        outFile << 0 << "," << first_cost << "," << first_solution_nodes << "," << solution->accCost_.value() << "," << final_solution_nodes << std::endl;
+    }
+    else
+    {
+        outFile << elapsed_time_double << "," << first_cost << "," << first_solution_nodes << "," << solution->accCost_.value() << "," << final_solution_nodes << std::endl;
+    }
 
     outFile.close();
 
