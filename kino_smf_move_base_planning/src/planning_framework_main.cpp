@@ -764,8 +764,8 @@ void OnlinePlannFramework::planWithSimpleSetup()
             });
 
         local_planner = ob::PlannerPtr(new oc::SST(si_local));
-        local_planner->as<oc::SST>()->setSelectionRadius(0.05);
-        local_planner->as<oc::SST>()->setPruningRadius(0.001);
+        local_planner->as<oc::SST>()->setSelectionRadius(0.15);
+        local_planner->as<oc::SST>()->setPruningRadius(0.05);
     }
 
     //=======================================================================
@@ -1367,9 +1367,9 @@ void OnlinePlannFramework::planningTimerCallback()
                 // !ESTIMATION OF START POINT PROJECTED ON THE LOCAL PATH
                 // #########################################################
 
-                local_start[0] = double(odom_data_->pose.pose.position.x); // x
-                local_start[1] = double(odom_data_->pose.pose.position.y); // y
-                local_start[2] = double(yaw);                              // yaw
+                local_start[0] = double(odom_data_->pose.pose.position.x + odom_data_->twist.twist.linear.x * solving_time_); // x
+                local_start[1] = double(odom_data_->pose.pose.position.y + odom_data_->twist.twist.linear.x * solving_time_); // y
+                local_start[2] = double(yaw + odom_data_->twist.twist.angular.z * solving_time_);                             // yaw
 
                 // ! calculate distance from robot position to last past local path waypoint
                 if (is_past_path_in_line)
