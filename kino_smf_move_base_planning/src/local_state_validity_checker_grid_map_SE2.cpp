@@ -66,7 +66,7 @@ bool LocalGridMapStateValidityCheckerSE2::isValid(const ob::State *state) const
     }
     grid_map::Position query(state_se2->getX(), state_se2->getY());
 
-    for (grid_map::CircleIterator iterator(grid_map_, query, robot_base_radius_);
+    for (grid_map::ReverseCircleIterator iterator(grid_map_, query, robot_base_radius_);
          !iterator.isPastEnd(); ++iterator)
     {
         const grid_map::Index index(*iterator);
@@ -110,7 +110,7 @@ double LocalGridMapStateValidityCheckerSE2::checkExtendedSocialComfort(const ob:
 
         bool is_risk_zone = false;
 
-        for (grid_map::CircleIterator iterator(grid_map_, query, robot_base_radius_ + 0.3);
+        for (grid_map::AnnulusIterator iterator(grid_map_, query, robot_base_radius_ + 0.15, robot_base_radius_ + 0.3);
              !iterator.isPastEnd(); ++iterator)
         {
             const grid_map::Index index(*iterator);
@@ -128,7 +128,8 @@ double LocalGridMapStateValidityCheckerSE2::checkExtendedSocialComfort(const ob:
         }
         else
         {
-            for (grid_map::CircleIterator iterator(grid_map_, query, robot_base_radius_ + 0.15);
+
+            for (grid_map::AnnulusIterator iterator(grid_map_, query, robot_base_radius_, robot_base_radius_ + 0.15);
                  !iterator.isPastEnd(); ++iterator)
             {
                 const grid_map::Index index(*iterator);

@@ -19,6 +19,9 @@
 #include <grid_map_msgs/srv/get_grid_map.hpp>
 #include <grid_map_msgs/msg/grid_map.hpp>
 
+#include <iterators/AnnulusIterator.h>
+#include <iterators/ReverseCircleIterator.h>
+
 // OMPL
 #include <ompl/config.h>
 #include <ompl/base/SpaceInformation.h>

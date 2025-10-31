@@ -71,7 +71,7 @@ bool GridMapStateValidityCheckerR2::isValid(const ob::State *state) const
 
     grid_map::Position query(state_r2->values[0], state_r2->values[1]);
 
-    for (grid_map::CircleIterator iterator(grid_map_, query, robot_base_radius_);
+    for (grid_map::ReverseCircleIterator iterator(grid_map_, query, robot_base_radius_);
          !iterator.isPastEnd(); ++iterator)
     {
         const grid_map::Index index(*iterator);
