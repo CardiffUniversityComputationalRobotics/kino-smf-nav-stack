@@ -782,7 +782,7 @@ void OnlinePlannFramework::planWithSimpleSetup()
     last_robot_pose_.getBasis().getEulerYPR(yaw, useless_pitch, useless_roll);
     start_state_[0] = double(last_robot_pose_.getOrigin().getX() + double(current_robot_velocity_.linear.x * cos(yaw) * solving_time_)); // x
     start_state_[1] = double(last_robot_pose_.getOrigin().getY() + double(current_robot_velocity_.linear.x * sin(yaw) * solving_time_)); // y
-    start_state_[2] = double(yaw);
+    start_state_[2] = double(yaw + current_robot_velocity_.angular.z * solving_time_);
 
     // create a start state
     //! GLOBAL START STATE
@@ -1502,10 +1502,6 @@ void OnlinePlannFramework::planningTimerCallback()
                         {
                             // ======================================================================
                             ob::StateSpacePtr space = simple_setup_local_->getStateSpace();
-
-                            ob::ScopedState<> current_robot_state(simple_setup_local_->getSpaceInformation()->getStateSpace());
-                            current_robot_state[0] = odom_data_->pose.pose.position.x;
-                            current_robot_state[1] = odom_data_->pose.pose.position.y;
 
                             for (int i = 0; i < local_path_states.size(); i++)
                             {
