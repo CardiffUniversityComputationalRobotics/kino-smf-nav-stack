@@ -783,9 +783,9 @@ void OnlinePlannFramework::planWithSimpleSetup()
     //=======================================================================
     double useless_pitch, useless_roll, yaw;
     last_robot_pose_.getBasis().getEulerYPR(yaw, useless_pitch, useless_roll);
-    start_state_[0] = double(last_robot_pose_.getOrigin().getX() + double(current_robot_velocity_.linear.x * (solving_time_ + 0.15))); // x
-    start_state_[1] = double(last_robot_pose_.getOrigin().getY() + double(current_robot_velocity_.linear.y * (solving_time_ + 0.15))); // y
-    start_state_[2] = double(yaw);
+    start_state_[0] = double(last_robot_pose_.getOrigin().getX() + double(current_robot_velocity_.linear.x * cos(yaw) * solving_time_)); // x
+    start_state_[1] = double(last_robot_pose_.getOrigin().getY() + double(current_robot_velocity_.linear.x * sin(yaw) * solving_time_)); // y
+    start_state_[2] = double(yaw + current_robot_velocity_.angular.z * solving_time_);
 
     // create a start state
     //! GLOBAL START STATE
@@ -1020,8 +1020,8 @@ void OnlinePlannFramework::planningTimerCallback()
 
         last_robot_pose_.getBasis().getEulerYPR(yaw, useless_pitch, useless_roll);
 
-        start[0] = double(last_robot_pose_.getOrigin().getX() + double(current_robot_velocity_.linear.x * (solving_time_ + 0.15))); // x
-        start[1] = double(last_robot_pose_.getOrigin().getY() + double(current_robot_velocity_.linear.y * (solving_time_ + 0.15))); // y
+        start[0] = double(last_robot_pose_.getOrigin().getX() + double(current_robot_velocity_.linear.x * cos(yaw) * solving_time_)); // x
+        start[1] = double(last_robot_pose_.getOrigin().getY() + double(current_robot_velocity_.linear.x * sin(yaw) * solving_time_)); // y
 
         goal[0] = double(goal_odom_frame_[0]); // x
         goal[1] = double(goal_odom_frame_[1]); // y
@@ -1370,9 +1370,9 @@ void OnlinePlannFramework::planningTimerCallback()
                 // !ESTIMATION OF START POINT PROJECTED ON THE LOCAL PATH
                 // #########################################################
 
-                local_start[0] = double(odom_data_->pose.pose.position.x); // x
-                local_start[1] = double(odom_data_->pose.pose.position.y); // y
-                local_start[2] = double(yaw);                              // yaw
+                local_start[0] = double(odom_data_->pose.pose.position.x + current_robot_velocity_.linear.x * cos(yaw) * solving_time_); // x
+                local_start[1] = double(odom_data_->pose.pose.position.y + current_robot_velocity_.linear.x * sin(yaw) * solving_time_); // y
+                local_start[2] = double(yaw + current_robot_velocity_.angular.z * solving_time_);                                        // yaw
 
                 // ! calculate distance from robot position to last past local path waypoint
                 if (is_past_path_in_line)
@@ -1512,10 +1512,6 @@ void OnlinePlannFramework::planningTimerCallback()
                         {
                             // ======================================================================
                             ob::StateSpacePtr space = simple_setup_local_->getStateSpace();
-
-                            ob::ScopedState<> current_robot_state(simple_setup_local_->getSpaceInformation()->getStateSpace());
-                            current_robot_state[0] = odom_data_->pose.pose.position.x;
-                            current_robot_state[1] = odom_data_->pose.pose.position.y;
 
                             for (int i = 0; i < local_path_states.size(); i++)
                             {
