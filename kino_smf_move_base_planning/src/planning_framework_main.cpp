@@ -767,8 +767,8 @@ void OnlinePlannFramework::planWithSimpleSetup()
             });
 
         local_planner = ob::PlannerPtr(new oc::SST(si_local));
-        local_planner->as<oc::SST>()->setSelectionRadius(0.05);
-        local_planner->as<oc::SST>()->setPruningRadius(0.001);
+        local_planner->as<oc::SST>()->setSelectionRadius(0.15);
+        local_planner->as<oc::SST>()->setPruningRadius(0.05);
     }
 
     //=======================================================================
@@ -1489,6 +1489,7 @@ void OnlinePlannFramework::planningTimerCallback()
                     {
                         RCLCPP_WARN(this->get_logger(), "using past local solution.\n");
                         use_last_local_path = true;
+                        use_last_local_path = false;
                     }
 
                     if (!use_last_local_path)
