@@ -176,7 +176,7 @@ namespace ompl
 
             base::InformedSamplerPtr sampler_;
 
-            ControlSamplerPtr controlSampler_;
+            DirectedControlSamplerPtr controlSampler_;
 
             const SpaceInformation *siC_;
 

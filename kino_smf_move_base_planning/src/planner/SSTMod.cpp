@@ -230,7 +230,7 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
     // if (!sampler_)
     //     sampler_ = si_->allocStateSampler();
     if (!controlSampler_)
-        controlSampler_ = siC_->allocControlSampler();
+        controlSampler_ = siC_->allocDirectedControlSampler();
 
     const base::ReportIntermediateSolutionFn intermediateSolutionCallback = pdef_->getIntermediateSolutionCallback();
 
@@ -264,7 +264,7 @@ ompl::base::PlannerStatus ompl::control::SST::solve(const base::PlannerTerminati
         Motion *nmotion = selectNode(rmotion);
 
         /* sample a random control that attempts to go towards the random state, and also sample a control duration */
-        controlSampler_->sample(rctrl);
+        controlSampler_->sampleTo(rctrl, nmotion->state_, rstate);
         unsigned int cd = rng_.uniformInt(siC_->getMinControlDuration(), siC_->getMaxControlDuration());
         unsigned int propCd = siC_->propagateWhileValid(nmotion->state_, rctrl, cd, rstate);
 
