@@ -1,18 +1,16 @@
 import rclpy
 import rclpy.node
 from geometry_msgs.msg import Twist, PoseStamped
-from nav_msgs.msg import Path
+from nav_msgs.msg import Path, Odometry
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Bool
 from math import atan2, pi
 import math
 from numpy import nanmin
-from path_follower.node import Node
+from kino_smf_move_base_control.node import Node
 import time
-from tf2_msgs.msg import TFMessage
 from tf2_ros import TransformListener, Buffer
 
-move_tolerance = 0.2
 scan_tolerance_front = 0.4
 scan_tolerance_side = 0.3
 rotate_tolerance = 0.004
@@ -32,6 +30,8 @@ class PathFollower:
         self.goal = PoseStamped()
 
         self.following_path = []
+
+        self.goal_available = False
 
         self.is_shutdown_initiated = False
         self.is_moving = False
@@ -77,7 +77,7 @@ class PathFollower:
             Bool, "/stop_motion", self.stop_motion_callback, 1
         )
         self.start_subscriber = self.node_.create_subscription(
-            TFMessage, "/tf", self.robot_pose_callback, 1
+            Odometry, "/odom", self.robot_pose_callback, 1
         )
         self.goal_subscriber = self.node_.create_subscription(
             PoseStamped, self.goal_topic, self.goal_callback, 1
@@ -99,29 +99,22 @@ class PathFollower:
 
     def goal_callback(self, data: PoseStamped):
         """Obtain goal from query"""
+        self.goal_available = True
         self.goal = Node.from_pose(data.pose)
 
-    def robot_pose_callback(self, data: TFMessage):
+    def robot_pose_callback(self, data: Odometry):
         """Listens to robot current pose"""
-        try:
-            transform = self.tf_buffer.lookup_transform(
-                "map", "base_link", rclpy.time.Time()
-            )
-            position = transform.transform.translation
-            quaternion = transform.transform.rotation
-        except:
-            return
 
         position = [
-            position.x,
-            position.y,
-            position.z,
+            data.pose.pose.position.x,
+            data.pose.pose.position.y,
+            data.pose.pose.position.z,
         ]
         orientation = [
-            quaternion.x,
-            quaternion.y,
-            quaternion.z,
-            quaternion.w,
+            data.pose.pose.orientation.x,
+            data.pose.pose.orientation.y,
+            data.pose.pose.orientation.z,
+            data.pose.pose.orientation.w,
         ]
 
         self.robot_position = Node.from_tf(position, orientation)
@@ -140,9 +133,6 @@ class PathFollower:
 
         nearest_node = 0
         distance = float("inf")
-
-        if len(path.poses) > 0:
-            self.goal = Node.from_pose(path.poses[-1].pose)
 
         for i in range(0, len(path.poses)):
             node = Node.from_pose(path.poses[i].pose)
@@ -203,6 +193,8 @@ class PathFollower:
             # self.goal_reached_publisher.publish(Bool(data=True))
             self.node_.get_logger().info("Goal has been reached")
             self.is_moving = False
+        else:
+            self.velocity_publisher.publish(Twist())  # Stopping robot
 
     def go_back(self):
         current_distance = 0.0
@@ -223,7 +215,7 @@ class PathFollower:
 
         self.is_obstacle_ahead = False
 
-    def move_to_point(self, point: Node):
+    def move_to_point(self, point: Node, move_tolerance=0.2):
         vel_msg = Twist()
         vel_msg.linear.x = float(self.max_trans_vel)
 
@@ -313,6 +305,18 @@ def main(args=None):
             rclpy.spin_once(controller.node_)
             if len(controller.following_path) > 0:
                 controller.follow_path()
+
+            elif controller.goal_available:
+                if (
+                    math.sqrt(
+                        math.pow(controller.goal.x - controller.robot_position.x, 2)
+                        + math.pow(controller.goal.y - controller.robot_position.y, 2)
+                    )
+                    < controller.goal_tolerance + 0.4
+                ):
+                    controller.move_to_point(controller.goal, move_tolerance=0.05)
+                    controller.rotate_to_goal(controller.goal)
+                    controller.velocity_publisher.publish(Twist())
 
     except KeyboardInterrupt:
         pass
