@@ -679,8 +679,8 @@ void OnlinePlannFramework::planWithSimpleSetup()
     else
     {
         local_planner = ob::PlannerPtr(new oc::SST(si_local));
-        local_planner->as<oc::SST>()->setSelectionRadius(0.05);
-        local_planner->as<oc::SST>()->setPruningRadius(0.001);
+        local_planner->as<oc::SST>()->setSelectionRadius(0.15);
+        local_planner->as<oc::SST>()->setPruningRadius(0.05);
     }
 
     //=======================================================================
@@ -1335,7 +1335,7 @@ void OnlinePlannFramework::planningTimerCallback()
                     if (distance_to_last_point >= local_path_range_ * 0.2 && past_local_path.cost(simple_setup_local_->getProblemDefinition()->getOptimizationObjective()).value() * 0.7 <= path_local.cost(simple_setup_local_->getProblemDefinition()->getOptimizationObjective()).value() && past_local_path.smoothness() * 0.7 <= path_local.smoothness())
                     {
                         RCLCPP_WARN(this->get_logger(), "using past local solution.\n");
-                        use_last_local_path = true;
+                        use_last_local_path = false;
                     }
 
                     if (!use_last_local_path)
