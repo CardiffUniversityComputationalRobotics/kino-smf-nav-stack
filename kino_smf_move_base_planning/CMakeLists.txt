@@ -7,10 +7,10 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # Set CUDA paths
-set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda-11.8)
-set(CMAKE_CUDA_COMPILER /usr/local/cuda-11.8/bin/nvcc)
-set(CUDACXX /usr/local/cuda-11.8/bin/nvcc)
-link_directories(/usr/local/cuda-11.8/lib64)
+set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda-12.8)
+set(CMAKE_CUDA_COMPILER /usr/local/cuda-12.8/bin/nvcc)
+set(CUDACXX /usr/local/cuda-12.8/bin/nvcc)
+link_directories(/usr/local/cuda-12.8/lib64)
 
 # Ensure CUDA is found and configured
 find_package(CUDA REQUIRED)
@@ -97,7 +97,7 @@ target_link_libraries(kino_smf_move_base_planner ${OMPL_LIBRARIES} ${TORCH_LIBRA
 # Set runtime path for CUDA libraries
 set_target_properties(kino_smf_move_base_planner PROPERTIES
     BUILD_RPATH_USE_ORIGIN TRUE
-    BUILD_RPATH "/usr/local/cuda-11.8/lib64"
+    BUILD_RPATH "/usr/local/cuda-12.8/lib64"
 )
 
 # Install targets
