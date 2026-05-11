@@ -814,7 +814,7 @@ void OnlinePlannFramework::planWithSimpleSetup()
     // ! GLOBAL GOAL SETUP
     simple_setup_global_->setStartState(start);
     simple_setup_global_->setGoalState(goal, goal_radius_);
-    // simple_setup_->getStateSpace()->setValidSegmentCountFactor(5.0);
+    simple_setup_global_->getStateSpace()->setValidSegmentCountFactor(15);
 
     // ! LOCAL GOAL SETUP
     simple_setup_local_->setStartState(local_start);
@@ -958,52 +958,52 @@ void OnlinePlannFramework::planningTimerCallback()
 
             if (last_robot_pose_.getOrigin().getX() < goal_odom_frame_[0])
             {
-                if (last_robot_pose_.getOrigin().getX() - 10.0 < planning_bounds_x_[0])
+                if (last_robot_pose_.getOrigin().getX() - 15.0 < planning_bounds_x_[0])
                     bounds.setLow(0, planning_bounds_x_[0]);
                 else
-                    bounds.setLow(0, last_robot_pose_.getOrigin().getX() - 10.0);
+                    bounds.setLow(0, last_robot_pose_.getOrigin().getX() - 15.0);
 
                 if (goal_odom_frame_[0] + 5.0 > planning_bounds_x_[1])
                     bounds.setHigh(0, planning_bounds_x_[1]);
                 else
-                    bounds.setHigh(0, goal_odom_frame_[0] + 10.0);
+                    bounds.setHigh(0, goal_odom_frame_[0] + 15.0);
             }
             else
             {
-                if (last_robot_pose_.getOrigin().getX() + 10.0 > planning_bounds_x_[1])
+                if (last_robot_pose_.getOrigin().getX() + 15.0 > planning_bounds_x_[1])
                     bounds.setHigh(0, planning_bounds_x_[1]);
                 else
-                    bounds.setHigh(0, last_robot_pose_.getOrigin().getX() + 10.0);
+                    bounds.setHigh(0, last_robot_pose_.getOrigin().getX() + 15.0);
 
-                if (goal_odom_frame_[0] - 10.0 < planning_bounds_x_[0])
+                if (goal_odom_frame_[0] - 15.0 < planning_bounds_x_[0])
                     bounds.setLow(0, planning_bounds_x_[0]);
                 else
-                    bounds.setLow(0, goal_odom_frame_[0] - 10.0);
+                    bounds.setLow(0, goal_odom_frame_[0] - 15.0);
             }
 
             if (last_robot_pose_.getOrigin().getY() < goal_odom_frame_[1])
             {
-                if (last_robot_pose_.getOrigin().getY() - 10.0 < planning_bounds_y_[0])
+                if (last_robot_pose_.getOrigin().getY() - 15.0 < planning_bounds_y_[0])
                     bounds.setLow(1, planning_bounds_y_[0]);
                 else
-                    bounds.setLow(1, last_robot_pose_.getOrigin().getY() - 10.0);
+                    bounds.setLow(1, last_robot_pose_.getOrigin().getY() - 15.0);
 
-                if (goal_odom_frame_[1] + 10.0 > planning_bounds_y_[1])
+                if (goal_odom_frame_[1] + 15.0 > planning_bounds_y_[1])
                     bounds.setHigh(1, planning_bounds_y_[1]);
                 else
-                    bounds.setHigh(1, goal_odom_frame_[1] + 10.0);
+                    bounds.setHigh(1, goal_odom_frame_[1] + 15.0);
             }
             else
             {
-                if (last_robot_pose_.getOrigin().getY() + 10.0 > planning_bounds_y_[1])
+                if (last_robot_pose_.getOrigin().getY() + 15.0 > planning_bounds_y_[1])
                     bounds.setHigh(1, planning_bounds_y_[1]);
                 else
-                    bounds.setHigh(1, last_robot_pose_.getOrigin().getY() + 10.0);
+                    bounds.setHigh(1, last_robot_pose_.getOrigin().getY() + 15.0);
 
-                if (goal_odom_frame_[1] - 10.0 < planning_bounds_y_[0])
+                if (goal_odom_frame_[1] - 15.0 < planning_bounds_y_[0])
                     bounds.setLow(1, planning_bounds_y_[0]);
                 else
-                    bounds.setLow(1, goal_odom_frame_[1] - 10.0);
+                    bounds.setLow(1, goal_odom_frame_[1] - 15.0);
             }
 
             simple_setup_global_->getStateSpace()->as<ob::RealVectorStateSpace>()->setBounds(bounds);
@@ -1032,7 +1032,7 @@ void OnlinePlannFramework::planningTimerCallback()
         simple_setup_global_->setGoalState(goal, goal_radius_);
         //
         // simple_setup_global_->getStateSpace()->setLongestValidSegmentFraction(0.02);
-        // simple_setup_global_->getStateSpace()->setValidSegmentCountFactor(5);
+        simple_setup_global_->getStateSpace()->setValidSegmentCountFactor(15);
         // simple_setup_global_->getSpaceInformation()->setStateValidityCheckingResolution(0.02);
 
         // !==================================
@@ -1231,7 +1231,7 @@ void OnlinePlannFramework::planningTimerCallback()
                     waypoints_diff_x = abs(global_path_feedback[global_path_feedback.size() - 1]->as<ob::SE2StateSpace::StateType>()->getX() - goal[0]);
                     waypoints_diff_y = abs(global_path_feedback[global_path_feedback.size() - 1]->as<ob::SE2StateSpace::StateType>()->getY() - goal[1]);
 
-                    if ((waypoints_diff_x < 3 && waypoints_diff_y < 3))
+                    if ((waypoints_diff_x < 2 && waypoints_diff_y < 2))
                     {
 
                         local_goal->setX(double(solution_path_states_[0]->as<ob::RealVectorStateSpace::StateType>()->values[0])); // x
