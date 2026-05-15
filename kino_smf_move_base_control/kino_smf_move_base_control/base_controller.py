@@ -45,6 +45,14 @@ class PathFollower:
             "control_output_topic", "/cmd_vel"
         ).value
 
+        self.stop_motion_topic = self.node_.declare_parameter(
+            "stop_motion_topic", "/stop_motion"
+        ).value
+
+        self.odom_topic = self.node_.declare_parameter(
+            "odometry_topic", "/odom"
+        ).value
+
         self.path_topic = self.node_.declare_parameter(
             "control_path_topic", "/path"
         ).value
@@ -74,10 +82,10 @@ class PathFollower:
             LaserScan, "/scan", self.scan_callback, 1
         )
         self.motion_stop_subscriber = self.node_.create_subscription(
-            Bool, "/stop_motion", self.stop_motion_callback, 1
+            Bool, self.stop_motion_topic, self.stop_motion_callback, 1
         )
         self.start_subscriber = self.node_.create_subscription(
-            Odometry, "/odom", self.robot_pose_callback, 1
+            Odometry, self.odom_topic, self.robot_pose_callback, 1
         )
         self.goal_subscriber = self.node_.create_subscription(
             PoseStamped, self.goal_topic, self.goal_callback, 1
@@ -124,10 +132,13 @@ class PathFollower:
         if stop_motion.data:
             self.stop_moving()
             self.initialize_stop()
+            self.node_.get_logger().info(
+                "Stop motion requested: goal cleared and robot stopped."
+            )
 
     def path_callback(self, path: Path):
         """Listens to obtained solution path from path planner"""
-
+        
         self.new_path_arrived = True
         node_path = []
 
@@ -165,9 +176,13 @@ class PathFollower:
 
     def stop_moving(self):
         self.following_path = []
+        self.goal_available = False
+        self.new_path_arrived = False
+        self.is_obstacle_ahead = False
         self.is_shutdown_initiated = False
         self.is_moving = False
         self.velocity_publisher.publish(Twist())
+        self.motion_publisher.publish(Bool(data=False))
 
     def follow_path(self):
         self.is_moving = True
@@ -178,6 +193,10 @@ class PathFollower:
                 return
             node_to_follow = self.following_path.pop(0)
             self.move_to_point(node_to_follow)
+
+        if self.is_shutdown_initiated:
+            self.stop_moving()
+            return
 
         if (
             math.sqrt(
