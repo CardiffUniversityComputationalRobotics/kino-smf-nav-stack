@@ -116,6 +116,8 @@ public:
     void visualizeRRTLocal(og::PathGeometric &geopath);
     //! Callback for getting the state of the Smf base controller.
     void controlActiveCallback(const std_msgs::msg::Bool::SharedPtr control_active_msg);
+    //! Callback for clearing the active goal on stop motion.
+    void stopMotionCallback(const std_msgs::msg::Bool::SharedPtr stop_motion_msg);
     //! check if goal candidate is valid
     bool validateGoalCandidate(const ob::ScopedState<> &goal_candidate);
     //! calculate angle between to points XY
@@ -141,6 +143,7 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr control_active_sub_;
     rclcpp::Subscription<pedsim_msgs::msg::AgentStates>::SharedPtr relevant_agents_sub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr stop_motion_sub_;
 
     // ! PUBLISHERS
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr solution_path_rviz_pub_;
@@ -150,7 +153,10 @@ private:
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr query_goal_radius_rviz_pub_;
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr num_nodes_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr goal_reached_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr erase_map_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr sweep_motion_pub_;
+
+    void publishGoalReached();
 
     // ! action server
     // KinoSmfBaseGoToActionServer *goto_action_server_;
@@ -180,7 +186,7 @@ private:
         goal_odom_frame_;
     double goal_radius_, local_goal_radius_, local_path_range_, global_time_percent_, max_trans_vel_, max_rot_vel_;
     std::string planner_name_, local_planner_name_, optimization_objective_, local_optimization_objective_, odometry_topic_, query_goal_topic_,
-        solution_path_topic_, world_frame_, octomap_service_, control_active_topic_;
+        solution_path_topic_, world_frame_, octomap_service_, control_active_topic_, erase_map_topic_;
     std::vector<const ob::State *> solution_path_states_, local_solution_path_states_, past_local_solution_path_states_;
 
     nav_msgs::msg::Odometry::SharedPtr odom_data_;
@@ -202,6 +208,7 @@ private:
 
     torch::jit::script::Module xy_module_;
     torch::jit::script::Module yaw_module_;
+    bool goal_reached_signal_sent_;
 };
 
 //!  Constructor.
@@ -210,7 +217,7 @@ private:
  * Publishers to visualize the resulting path.
  */
 OnlinePlannFramework::OnlinePlannFramework()
-    : Node("online_planning_framework"), dynamic_bounds_(false), control_active_(false)
+    : Node("online_planning_framework"), dynamic_bounds_(false), control_active_(false), goal_reached_signal_sent_(false)
 {
 
     //=======================================================================
@@ -260,6 +267,7 @@ OnlinePlannFramework::OnlinePlannFramework()
     this->declare_parameter("max_rot_vel", rclcpp::ParameterValue(1.2));
     this->declare_parameter("grid_map_service", rclcpp::ParameterValue(std::string("/get_grid_map")));
     this->declare_parameter("local_use_social_heatmap", rclcpp::ParameterValue(false));
+    this->declare_parameter("erase_map_topic", rclcpp::ParameterValue(std::string("erase_map")));
 
     // learning model use parameters
     this->declare_parameter("position_model_path", rclcpp::ParameterValue(std::string("/home/steven/trained_model/model_xy_0.0001_final.pth")));
@@ -301,6 +309,7 @@ OnlinePlannFramework::OnlinePlannFramework()
     max_rot_vel_ = this->get_parameter("max_rot_vel").as_double();
     grid_map_service_ = this->get_parameter("grid_map_service").as_string();
     local_use_social_heatmap_ = this->get_parameter("local_use_social_heatmap").as_bool();
+    erase_map_topic_ = this->get_parameter("erase_map_topic").as_string();
 
     position_model_path_ = this->get_parameter("position_model_path").as_string();
     orientation_model_path_ = this->get_parameter("orientation_model_path").as_string();
@@ -327,6 +336,13 @@ OnlinePlannFramework::OnlinePlannFramework()
     // 2D Nav Goal
     nav_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(query_goal_topic_, 1, std::bind(&OnlinePlannFramework::queryGoalCallback, this, std::placeholders::_1));
 
+    // Stop motion
+    rclcpp::SubscriptionOptions stop_motion_options;
+    stop_motion_options.ignore_local_publications = true;
+    stop_motion_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+        "stop_motion", 1, std::bind(&OnlinePlannFramework::stopMotionCallback, this, std::placeholders::_1),
+        stop_motion_options);
+
     // Controller active flag
     // control_active_sub_ = this->create_subscription<std_msgs::msg::Bool>(control_active_topic_, 1, std::bind(&OnlinePlannFramework::controlActiveCallback, this, std::placeholders::_1));
 
@@ -344,6 +360,7 @@ OnlinePlannFramework::OnlinePlannFramework()
     query_goal_radius_rviz_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("query_goal_radius_rviz", 1);
     num_nodes_pub_ = this->create_publisher<std_msgs::msg::Int32>("kino_smf_num_nodes", 1);
     goal_reached_pub_ = this->create_publisher<std_msgs::msg::Bool>("goal_reached", 1);
+    erase_map_pub_ = this->create_publisher<std_msgs::msg::Bool>(erase_map_topic_, 1);
     sweep_motion_pub_ = this->create_publisher<std_msgs::msg::Bool>("sweep_motion", 1);
 
     // ! SERVICE CLIENT WAIT
@@ -377,6 +394,25 @@ OnlinePlannFramework::OnlinePlannFramework()
     RCLCPP_WARN(this->get_logger(), "Odometry received");
 
     // goto_action_server_->start();
+}
+
+void OnlinePlannFramework::publishGoalReached()
+{
+    if (goal_reached_signal_sent_)
+    {
+        return;
+    }
+
+    std_msgs::msg::Bool goal_reached;
+    goal_reached.data = true;
+    goal_reached_pub_->publish(goal_reached);
+
+    std_msgs::msg::Bool erase_map;
+    erase_map.data = true;
+    erase_map_pub_->publish(erase_map);
+
+    goal_reached_signal_sent_ = true;
+    RCLCPP_WARN(this->get_logger(), "Goal reached.");
 }
 
 //! Goto action callback.
@@ -483,6 +519,7 @@ void OnlinePlannFramework::goToActionCallback(const std::shared_ptr<kino_smf_mov
     solution_path_states_.clear();
     local_solution_path_states_.clear();
     goal_available_ = true;
+    goal_reached_signal_sent_ = false;
 
     rclcpp::Rate loop_rate(10);
     while (rclcpp::ok() && (goal_available_ || control_active_))
@@ -492,9 +529,7 @@ void OnlinePlannFramework::goToActionCallback(const std::shared_ptr<kino_smf_mov
     result->success = true;
 
     // goto_action_server_->succeeded(result);
-    std_msgs::msg::Bool goal_reached;
-    goal_reached.data = true;
-    goal_reached_pub_->publish(goal_reached);
+    publishGoalReached();
     // is_sweep_done_ = false;
 }
 
@@ -525,10 +560,7 @@ void OnlinePlannFramework::odomCallback(const nav_msgs::msg::Odometry::SharedPtr
         abs(yaw - goal_odom_frame_[2]) < (yaw_goal_tolerance_ + 0.2))
     {
         goal_available_ = false;
-        std_msgs::msg::Bool goal_reached;
-        goal_reached.data = true;
-        goal_reached_pub_->publish(goal_reached);
-        RCLCPP_WARN(this->get_logger(), "Goal reached");
+        publishGoalReached();
     }
 
     current_robot_velocity_ = odom_msg->twist.twist;
@@ -553,6 +585,48 @@ void OnlinePlannFramework::relevantAgentsCallback(const pedsim_msgs::msg::AgentS
 void OnlinePlannFramework::controlActiveCallback(const std_msgs::msg::Bool::SharedPtr control_active_msg)
 {
     control_active_ = control_active_msg->data;
+}
+
+//! Stop motion callback.
+/*!
+ * Callback for clearing the active goal and stopping planning.
+ */
+void OnlinePlannFramework::stopMotionCallback(const std_msgs::msg::Bool::SharedPtr stop_motion_msg)
+{
+    if (!stop_motion_msg->data)
+        return;
+
+    const bool had_goal = goal_available_ || control_active_ ||
+                          !solution_path_states_.empty() || !local_solution_path_states_.empty() ||
+                          !past_local_solution_path_states_.empty();
+
+    goal_available_ = false;
+    control_active_ = false;
+    goal_reached_signal_sent_ = true;
+
+    for (double &value : goal_map_frame_)
+        value = 0.0;
+    for (double &value : goal_odom_frame_)
+        value = 0.0;
+
+    solution_path_states_.clear();
+    local_solution_path_states_.clear();
+    past_local_solution_path_states_.clear();
+
+    if (simple_setup_global_)
+    {
+        simple_setup_global_->clear();
+        simple_setup_global_->clearStartStates();
+    }
+
+    if (simple_setup_local_)
+    {
+        simple_setup_local_->clear();
+        simple_setup_local_->clearStartStates();
+    }
+
+    if (had_goal)
+        RCLCPP_INFO(this->get_logger(), "Stop motion received; cleared current planning goal");
 }
 
 //! Navigation goal callback.
@@ -609,6 +683,7 @@ void OnlinePlannFramework::queryGoalCallback(const geometry_msgs::msg::PoseStamp
     solution_path_states_.clear();
     local_solution_path_states_.clear();
     goal_available_ = true;
+    goal_reached_signal_sent_ = false;
 
     //=======================================================================
     // Publish RViz Maker
@@ -632,6 +707,10 @@ void OnlinePlannFramework::queryGoalCallback(const geometry_msgs::msg::PoseStamp
     radius_msg.pose.position.y = goal_map_frame_[1];
     radius_msg.pose.position.z = 0.0;
     query_goal_radius_rviz_pub_->publish(radius_msg);
+
+    std_msgs::msg::Bool erase_map;
+    erase_map.data = true;
+    erase_map_pub_->publish(erase_map);
 }
 
 //!  Planner setup.
