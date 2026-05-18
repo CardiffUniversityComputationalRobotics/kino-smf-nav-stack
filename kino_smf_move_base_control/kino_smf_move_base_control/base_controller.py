@@ -27,7 +27,7 @@ class PathFollower:
         self.path_deviation = 0.0  # Used to avoid obstacles
 
         # self.planner = planner
-        self.goal = PoseStamped()
+        self.goal = None
 
         self.following_path = []
 
@@ -58,7 +58,7 @@ class PathFollower:
         ).value
 
         self.goal_topic = self.node_.declare_parameter(
-            "query_goal_topic", "/goal"
+            "query_goal_topic", "/goal_pose"
         ).value
 
         self.sweep_motion_topic = self.node_.declare_parameter(
@@ -107,8 +107,11 @@ class PathFollower:
 
     def goal_callback(self, data: PoseStamped):
         """Obtain goal from query"""
-        self.goal_available = True
         self.goal = Node.from_pose(data.pose)
+        self.goal_available = True
+        self.node_.get_logger().info(
+            f"Goal received on {self.goal_topic}: x={self.goal.x:.3f}, y={self.goal.y:.3f}"
+        )
 
     def robot_pose_callback(self, data: Odometry):
         """Listens to robot current pose"""
@@ -138,7 +141,12 @@ class PathFollower:
 
     def path_callback(self, path: Path):
         """Listens to obtained solution path from path planner"""
-        
+        if self.robot_position is None:
+            self.node_.get_logger().warn(
+                "Ignoring path because odometry has not been received yet."
+            )
+            return
+
         self.new_path_arrived = True
         node_path = []
 
@@ -185,9 +193,21 @@ class PathFollower:
         self.motion_publisher.publish(Bool(data=False))
 
     def follow_path(self):
+        if self.robot_position is None:
+            self.node_.get_logger().warn(
+                "Cannot follow path because odometry has not been received yet."
+            )
+            return
+
+        if self.goal is None or not self.goal_available:
+            self.node_.get_logger().warn(
+                "Cannot follow path because no goal has been received yet."
+            )
+            return
+
         self.is_moving = True
 
-        while len(self.following_path) > 0:
+        while len(self.following_path) > 0 and self.goal_available:
             if self.is_shutdown_initiated:
                 self.stop_moving()
                 return
@@ -211,6 +231,7 @@ class PathFollower:
 
             # self.goal_reached_publisher.publish(Bool(data=True))
             self.node_.get_logger().info("Goal has been reached")
+            self.goal_available = False
             self.is_moving = False
         else:
             self.velocity_publisher.publish(Twist())  # Stopping robot
@@ -235,6 +256,12 @@ class PathFollower:
         self.is_obstacle_ahead = False
 
     def move_to_point(self, point: Node, move_tolerance=0.2):
+        if self.robot_position is None:
+            self.node_.get_logger().warn(
+                "Cannot move because odometry has not been received yet."
+            )
+            return
+
         vel_msg = Twist()
         vel_msg.linear.x = float(self.max_trans_vel)
 
@@ -265,6 +292,12 @@ class PathFollower:
             rclpy.spin_once(self.node_)
 
     def rotate_to_goal(self, goal: Node):
+        if self.robot_position is None:
+            self.node_.get_logger().warn(
+                "Cannot rotate because odometry has not been received yet."
+            )
+            return
+
         if isinstance(goal, PoseStamped):
             goal = Node.from_pose(goal.pose)
 
@@ -322,11 +355,15 @@ def main(args=None):
     try:
         while rclpy.ok():
             rclpy.spin_once(controller.node_)
-            if len(controller.following_path) > 0:
+            if (
+                len(controller.following_path) > 0
+                and controller.goal_available
+                and controller.goal is not None
+            ):
                 controller.follow_path()
 
-            elif controller.goal_available:
-                if (
+            elif controller.goal_available and controller.goal is not None:
+                if controller.robot_position is not None and (
                     math.sqrt(
                         math.pow(controller.goal.x - controller.robot_position.x, 2)
                         + math.pow(controller.goal.y - controller.robot_position.y, 2)
@@ -336,6 +373,7 @@ def main(args=None):
                     controller.move_to_point(controller.goal, move_tolerance=0.05)
                     controller.rotate_to_goal(controller.goal)
                     controller.velocity_publisher.publish(Twist())
+                    controller.goal_available = False
 
     except KeyboardInterrupt:
         pass
