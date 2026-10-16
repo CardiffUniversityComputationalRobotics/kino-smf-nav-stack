@@ -5,6 +5,11 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# without a build type nothing is optimized and the sensor callbacks cannot keep up with the camera
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo)
+endif()
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -29,6 +34,7 @@ find_package(OCTOMAP REQUIRED)
 find_package(octomap_server REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(laser_geometry REQUIRED)
+find_package(cv_bridge REQUIRED)
 
 include_directories(
   include
@@ -60,11 +66,13 @@ set(dependencies
     pcl_ros
     grid_map_octomap
     laser_geometry
+    cv_bridge
 )
 
 add_executable(kino_smf_move_base_mapper
 src/world_modeler.cpp
 src/social_heatmap.cpp
+src/scan_integrator.cpp
 )
 ament_target_dependencies(kino_smf_move_base_mapper ${dependencies})
 target_link_libraries(kino_smf_move_base_mapper ${OCTOMAP_LIBRARIES})

@@ -19,7 +19,10 @@ void SocialHeatmap::updateSocialHeatmap(grid_map::GridMap grid_map, pedsim_msgs:
 
     social_heatmap_ = grid_map;
 
-    social_heatmap_.add("social_heatmap");
+    if (!social_heatmap_.exists("social_heatmap"))
+    {
+        social_heatmap_.add("social_heatmap");
+    }
 
     grid_map::Matrix &social_heatmap_grid_map = social_heatmap_["social_heatmap"];
 

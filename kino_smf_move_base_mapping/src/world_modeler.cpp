@@ -83,7 +83,19 @@ WorldModeler::WorldModeler()
     this->declare_parameter("social_comfort_amplitude", social_comfort_amplitude_);
     this->declare_parameter("apply_filter", apply_filter_);
     this->declare_parameter("add_max_ranges", add_max_ranges_);
+    this->declare_parameter("laser_zero_is_no_return", laser_zero_is_no_return_);
     this->declare_parameter("minimum_range", minimum_range_);
+    this->declare_parameter("prob_hit", prob_hit_);
+    this->declare_parameter("prob_miss", prob_miss_);
+    this->declare_parameter("clamping_thres_min", clamping_thres_min_);
+    this->declare_parameter("clamping_thres_max", clamping_thres_max_);
+    this->declare_parameter("occupancy_thres", occupancy_thres_);
+    this->declare_parameter("pc_min_z_offset", pc_min_z_offset_);
+    this->declare_parameter("pc_max_obstacle_range", pc_max_obstacle_range_);
+    this->declare_parameter("pc_voxel_min_points", pc_voxel_min_points_);
+    this->declare_parameter("pc_range_noise", pc_range_noise_);
+    this->declare_parameter("agent_filter_radius", agent_filter_radius_);
+    this->declare_parameter("obstacle_decay_time", obstacle_decay_time_);
 
     this->get_parameter("add_rays", add_rays_);
     this->get_parameter("resolution", octree_resol_);
@@ -113,9 +125,25 @@ WorldModeler::WorldModeler()
     this->get_parameter("social_comfort_amplitude", social_comfort_amplitude_);
     this->get_parameter("apply_filter", apply_filter_);
     this->get_parameter("add_max_ranges", add_max_ranges_);
+    this->get_parameter("laser_zero_is_no_return", laser_zero_is_no_return_);
     this->get_parameter("minimum_range", minimum_range_);
+    this->get_parameter("prob_hit", prob_hit_);
+    this->get_parameter("prob_miss", prob_miss_);
+    this->get_parameter("clamping_thres_min", clamping_thres_min_);
+    this->get_parameter("clamping_thres_max", clamping_thres_max_);
+    this->get_parameter("occupancy_thres", occupancy_thres_);
+    this->get_parameter("pc_min_z_offset", pc_min_z_offset_);
+    this->get_parameter("pc_max_obstacle_range", pc_max_obstacle_range_);
+    this->get_parameter("pc_voxel_min_points", pc_voxel_min_points_);
+    this->get_parameter("pc_range_noise", pc_range_noise_);
+    this->get_parameter("agent_filter_radius", agent_filter_radius_);
+    this->get_parameter("obstacle_decay_time", obstacle_decay_time_);
 
-    this->set_parameter(rclcpp::Parameter("use_sim_time", true));
+    // frame of the agent poses until an agent states message says otherwise
+    agent_states_frame_ = fixed_frame_;
+
+    // use_sim_time comes from the launch/config: forcing it on with no /clock (real
+    // robot) leaves this node's clock at 0, so its stamps and timeouts break
 
     //=======================================================================
     // Transforms TF and catch the static transform from vehicle to laser_scan
@@ -123,7 +151,7 @@ WorldModeler::WorldModeler()
     //=======================================================================
 
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
-    tf_buffer_->setUsingDedicatedThread(false);
+    tf_buffer_->setUsingDedicatedThread(true);
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     auto create_timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
@@ -198,10 +226,37 @@ WorldModeler::WorldModeler()
         octree_ = new octomap::OcTree(octree_resol_);
     RCLCPP_WARN(this->get_logger(), "Loaded octree");
 
-    octree_->setProbHit(0.7);
-    octree_->setProbMiss(0.4);
-    octree_->setClampingThresMin(0.1192);
-    octree_->setClampingThresMax(0.971);
+    octree_->setProbHit(prob_hit_);
+    octree_->setProbMiss(prob_miss_);
+    octree_->setClampingThresMin(clamping_thres_min_);
+    octree_->setClampingThresMax(clamping_thres_max_);
+    // a stored map keeps the default threshold, it was built with it
+    if (offline_octomap_path_.size() == 0)
+        octree_->setOccupancyThres(occupancy_thres_);
+
+    //=======================================================================
+    // Scan insertion
+    //=======================================================================
+
+    // depth camera: obstacles above the floor margin and within its reliable range,
+    // in voxels with enough points; every other valid point only clears
+    point_cloud_params_.min_z = min_z_pc_ + pc_min_z_offset_;
+    point_cloud_params_.max_z = max_z_pc_;
+    point_cloud_params_.min_range = minimum_range_;
+    point_cloud_params_.max_range = mapping_max_range_;
+    point_cloud_params_.max_obstacle_range = pc_max_obstacle_range_;
+    point_cloud_params_.min_points_per_voxel = static_cast<unsigned int>(std::max(pc_voxel_min_points_, 1));
+    point_cloud_params_.agent_radius = agent_filter_radius_;
+    point_cloud_params_.range_noise = pc_range_noise_;
+
+    // laser scan: a single beam per voxel is enough
+    laser_scan_params_ = point_cloud_params_;
+    laser_scan_params_.min_z = min_z_pc_;
+    laser_scan_params_.max_obstacle_range = -1.0;
+    laser_scan_params_.min_points_per_voxel = 1;
+    laser_scan_params_.range_noise = 0.0;
+
+    scan_integrator_.setDecayTime(obstacle_decay_time_);
 
     //=======================================================================
     // Gridmap
@@ -259,7 +314,7 @@ WorldModeler::WorldModeler()
         point_cloud_mn_ = std::make_shared<tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2>>(
             *tf_buffer_,
             point_cloud_frame_,
-            5,
+            1,
             this->get_node_logging_interface(),
             this->get_node_clock_interface());
         point_cloud_mn_->connectInput(*point_cloud_sub_);
@@ -276,7 +331,7 @@ WorldModeler::WorldModeler()
         laser_scan_mn_ = std::make_shared<tf2_ros::MessageFilter<sensor_msgs::msg::LaserScan>>(
             *tf_buffer_,
             laser_scan_frame_,
-            5,
+            1,
             this->get_node_logging_interface(),
             this->get_node_clock_interface());
         laser_scan_mn_->connectInput(*laser_scan_sub_);
@@ -330,6 +385,7 @@ void WorldModeler::eraseMap()
     std::lock_guard<std::recursive_mutex> lock(map_state_mutex_);
 
     octree_->clear();
+    scan_integrator_.reset();
     initializeGridMap();
 
     social_heatmap_ = SocialHeatmap();
@@ -377,7 +433,7 @@ void WorldModeler::laserScanCallback(const sensor_msgs::msg::LaserScan::SharedPt
         RCLCPP_WARN(this->get_logger(), "Sensor callbacks resumed after erase_map cooldown");
     }
 
-    geometry_msgs::msg::TransformStamped tf_robot_to_laser_scan, tf_fixed_to_robot, tf_map_to_fixed;
+    geometry_msgs::msg::TransformStamped tf_map_to_fixed;
 
     try
     {
@@ -406,11 +462,9 @@ void WorldModeler::laserScanCallback(const sensor_msgs::msg::LaserScan::SharedPt
             orientation_drift_ = 0.0;
             position_drift_ = 0.0;
             octree_->clear();
+            scan_integrator_.reset();
             // mergeGlobalMapToOctomap();
         }
-
-        tf_robot_to_laser_scan = tf_buffer_->lookupTransform(robot_frame_, laser_scan_msg->header.frame_id, tf2::TimePointZero);
-        tf_fixed_to_robot = tf_buffer_->lookupTransform(fixed_frame_, robot_frame_, tf2::TimePointZero);
     }
     catch (tf2::TransformException &ex)
     {
@@ -421,87 +475,10 @@ void WorldModeler::laserScanCallback(const sensor_msgs::msg::LaserScan::SharedPt
     // Editable message
     sensor_msgs::msg::LaserScan laser_scan = *laser_scan_msg;
 
-    // Max range flags
-    std::vector<bool> rngflags;
-    rngflags.resize(laser_scan.ranges.size());
-    for (int i = 0; i < laser_scan.ranges.size(); i++)
-    {
-        rngflags[i] = false;
-        if (!rclcpp::ok())
-            break;
-    }
-
-    // Use zero ranges as max ranges
-    double new_max = laser_scan.range_max * 0.95;
-    if (add_max_ranges_)
-    {
-        // Flag readings as maxrange
-        for (int i = 0; i < laser_scan.ranges.size(); i++)
-        {
-            if (laser_scan.ranges[i] == 0.0 || laser_scan.ranges[i] >= laser_scan.range_max)
-            {
-                laser_scan.ranges[i] = new_max;
-                rngflags[i] = true;
-            }
-        }
-    }
-
     // Apply single outliers removal filter
     if (apply_filter_)
     {
-        // Copy message for editing, filter and project to (x,y,z)
-        sensor_msgs::msg::LaserScan laser_scan = *laser_scan_msg;
-        filterSingleOutliers(laser_scan, rngflags);
-    }
-
-    // Project to (x,y,z)
-    laser_scan_projector_.projectLaser(laser_scan, cloud_, laser_scan.range_max);
-
-    // Compute origin of sensor in world frame (filters laser_scan_msg->ranges[i] > 0.0)
-    geometry_msgs::msg::PoseStamped orig;
-    tf2::doTransform(orig, orig, tf_fixed_to_robot);
-    tf2::doTransform(orig, orig, tf_robot_to_laser_scan);
-    octomap::point3d origin(orig.pose.position.x, orig.pose.position.y, orig.pose.position.z);
-
-    // ! AGENTS FILTERING
-
-    // =============================
-
-    PCLPointCloud pc; // input cloud for filtering and ground-detection
-    pcl::fromROSMsg(cloud_, pc);
-
-    float minX = -0.6, minY = -0.6, minZ = -0.6;
-    float maxX = 0.6, maxY = 0.6, maxZ = 0.6;
-
-    geometry_msgs::msg::TransformStamped transform;
-
-    if (social_agents_in_radius_.agent_states.size() > 0)
-    {
-        for (int i = 0; i < social_agents_in_radius_.agent_states.size(); i++)
-        {
-            std::string agent_frame = "agent_" + std::to_string(social_agents_in_radius_.agent_states[i].id);
-            try
-            {
-                transform = tf_buffer_->lookupTransform(laser_scan_msg->header.frame_id, agent_frame, laser_scan_msg->header.stamp);
-            }
-            catch (tf2::TransformException &ex)
-            {
-                RCLCPP_WARN(this->get_logger(), "Transform error of sensor data: %s. Getting the latest obtained transform.", ex.what());
-                transform = tf_buffer_->lookupTransform(laser_scan_msg->header.frame_id, agent_frame, tf2::TimePointZero);
-            }
-
-            // Z -> X
-            // X -> Y
-            // Y -> -Z
-            pcl::CropBox<pcl::PointXYZ> boxFilter;
-            boxFilter.setMin(Eigen::Vector4f(minX, minY, minZ, 0));
-            boxFilter.setMax(Eigen::Vector4f(maxX, maxY, maxZ, 0));
-            boxFilter.setInputCloud(pc.makeShared());
-            boxFilter.setTranslation(Eigen::Vector3f(transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z));
-            // boxFilter.setRotation(Eigen::Vector3f(roll, pitch + 90, yaw));
-            boxFilter.setNegative(true);
-            boxFilter.filter(pc);
-        }
+        filterSingleOutliers(laser_scan);
     }
 
     geometry_msgs::msg::TransformStamped sensorToWorldTf;
@@ -515,41 +492,53 @@ void WorldModeler::laserScanCallback(const sensor_msgs::msg::LaserScan::SharedPt
         return;
     }
 
-    Eigen::Matrix4f sensorToWorld;
-    pcl_ros::transformAsMatrix(sensorToWorldTf, sensorToWorld);
+    tf2::Transform sensorToWorld;
+    tf2::fromMsg(sensorToWorldTf.transform, sensorToWorld);
 
-    // set up filter for height range, also removes NANs:
-    // pcl::PassThrough<PCLPoint> pass_x;
-    // pass_x.setFilterFieldName("x");
-    // pass_x.setFilterLimits(0.15, 4.0);
-    // pcl::PassThrough<PCLPoint> pass_y;
-    // pass_y.setFilterFieldName("y");
-    // pass_y.setFilterLimits(0.15, 4.0);
-    pcl::PassThrough<PCLPoint> pass_z;
-    pass_z.setFilterFieldName("z");
-    pass_z.setFilterLimits(min_z_pc_, max_z_pc_); // TODO
+    // Project to (x,y,z) in the fixed frame. Readings without return (+inf or exactly range_max,
+    // REP 117, and zero only for drivers that report no return that way) are never obstacles, with
+    // add_max_ranges they clear the space in front of the sensor. Other readings out of
+    // [range_min, range_max] are discarded, e.g. range_max + 1 written by the in-place filters of
+    // laser_filters over the parts of the robot that block the laser.
+    octomap::Pointcloud returns, no_returns;
+    const double no_return_range = laser_scan.range_max * 0.95;
 
-    PCLPointCloud pc_ground;    // segmented ground plane
-    PCLPointCloud pc_nonground; // everything else
+    for (std::size_t i = 0; i < laser_scan.ranges.size(); i++)
+    {
+        double range = laser_scan.ranges[i];
+        const bool no_return = (std::isinf(range) && range > 0.0) || range == laser_scan.range_max ||
+                               (laser_zero_is_no_return_ && range == 0.0);
 
-    // directly transform to map frame:
-    pcl::transformPointCloud(pc, pc, sensorToWorld);
+        if (no_return)
+        {
+            if (!add_max_ranges_ || !std::isfinite(no_return_range))
+                continue;
+            range = no_return_range;
+        }
+        else if (!std::isfinite(range) || range < laser_scan.range_min || range > laser_scan.range_max)
+        {
+            continue;
+        }
 
-    // just filter height range:
-    // pass_x.setInputCloud(pc.makeShared());
-    // pass_x.filter(pc);
-    // pass_y.setInputCloud(pc.makeShared());
-    // pass_y.filter(pc);
-    pass_z.setInputCloud(pc.makeShared());
-    pass_z.filter(pc);
+        const double angle = laser_scan.angle_min + i * laser_scan.angle_increment;
+        const tf2::Vector3 point = sensorToWorld * tf2::Vector3(range * std::cos(angle), range * std::sin(angle), 0.0);
 
-    pc_nonground = pc;
+        if (no_return)
+            no_returns.push_back(point.x(), point.y(), point.z());
+        else
+            returns.push_back(point.x(), point.y(), point.z());
+    }
 
-    // pc_nonground is empty without ground segmentation
-    pc_ground.header = pc.header;
-    pc_nonground.header = pc.header;
+    const geometry_msgs::msg::Vector3 &sensor_origin = sensorToWorldTf.transform.translation;
 
-    insertScan(sensorToWorldTf.transform.translation, pc_ground, pc_nonground, mapping_max_range_, minimum_range_);
+    // the camera never clears the layer of the scan plane: the laser sees obstacles there
+    // that the camera may miss (thin or dark legs), and they would never stay mapped
+    point_cloud_params_.keep_min_z = sensor_origin.z - 0.45 * octree_->getResolution();
+    point_cloud_params_.keep_max_z = sensor_origin.z + 0.45 * octree_->getResolution();
+
+    scan_integrator_.insertScan(*octree_, octomap::point3d(sensor_origin.x, sensor_origin.y, sensor_origin.z),
+                                returns, no_returns, getAgentPositions(laser_scan_msg->header.stamp),
+                                laser_scan_params_, rclcpp::Time(laser_scan_msg->header.stamp).seconds());
 }
 
 //! Pointcloud callback.
@@ -571,67 +560,9 @@ void WorldModeler::pointCloudCallback(const sensor_msgs::msg::PointCloud2::Share
         RCLCPP_WARN(this->get_logger(), "Sensor callbacks resumed after erase_map cooldown");
     }
 
-    //
-    // ground filtering in base frame
-    //
-    PCLPointCloud pc; // input cloud for filtering and ground-detection
-    pcl::fromROSMsg(*cloud, pc);
-
-    float minX = -0.6, minY = -0.6, minZ = -12;
-    float maxX = 0.6, maxY = 0.6, maxZ = 12;
-
-    // ROS_INFO_STREAM("ABOUT TO PROCESS AGENTS");
-
-    if (social_agents_in_radius_.agent_states.size() > 0)
-    {
-        for (int i = 0; i < social_agents_in_radius_.agent_states.size(); i++)
-        {
-            std::string err = "cannot find transform from agent to camera frame";
-
-            geometry_msgs::msg::TransformStamped transform;
-
-            try
-            {
-                transform = tf_buffer_->lookupTransform(cloud->header.frame_id, "agent_" + std::to_string(social_agents_in_radius_.agent_states[i].id), cloud->header.stamp);
-
-                tf2::Quaternion q(
-                    transform.transform.rotation.x,
-                    transform.transform.rotation.y,
-                    transform.transform.rotation.z,
-                    transform.transform.rotation.w);
-                tf2::Matrix3x3 m(q);
-                double roll, pitch, yaw;
-                m.getRPY(roll, pitch, yaw);
-
-                // Z -> X
-                // X -> Y
-                // Y -> -Z
-                pcl::CropBox<pcl::PointXYZ> boxFilter;
-                boxFilter.setMin(Eigen::Vector4f(minX, minY, minZ, 0));
-                boxFilter.setMax(Eigen::Vector4f(maxX, maxY, maxZ, 0));
-                boxFilter.setInputCloud(pc.makeShared());
-                boxFilter.setTranslation(Eigen::Vector3f(transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z));
-                boxFilter.setRotation(Eigen::Vector3f(roll, pitch, yaw));
-                boxFilter.setNegative(true);
-                boxFilter.filter(pc);
-            }
-            catch (tf2::TransformException &ex)
-            {
-                RCLCPP_ERROR(this->get_logger(), "Transform error of sensor data: %s, quitting callback", ex.what());
-                return;
-            }
-        }
-    }
-    // ROS_INFO_STREAM("ABOUT TO PROCESS AGENTS FINISHED");
-
-    std::string err = "cannot find transform from robot_frame to scan frame";
-
     geometry_msgs::msg::TransformStamped sensorToWorldTf;
     try
     {
-        //        tf_listener_.lookupTransform(robot_frame_,
-        //        laser_scan_msg->header.frame_id, t,
-        //                                     tf_robot_to_laser_scan);
         sensorToWorldTf = tf_buffer_->lookupTransform(fixed_frame_, cloud->header.frame_id, cloud->header.stamp);
     }
     catch (tf2::TransformException &ex)
@@ -643,149 +574,91 @@ void WorldModeler::pointCloudCallback(const sensor_msgs::msg::PointCloud2::Share
     Eigen::Matrix4f sensorToWorld;
     pcl_ros::transformAsMatrix(sensorToWorldTf, sensorToWorld);
 
-    // set up filter for height range, also removes NANs:
-    // pcl::PassThrough<PCLPoint> pass_x;
-    // pass_x.setFilterFieldName("x");
-    // pass_x.setFilterLimits(0.15, 4.0);
-    // pcl::PassThrough<PCLPoint> pass_y;
-    // pass_y.setFilterFieldName("y");
-    // pass_y.setFilterLimits(0.15, 4.0);
-    pcl::PassThrough<PCLPoint> pass_z;
-    pass_z.setFilterFieldName("z");
-    pass_z.setFilterLimits(min_z_pc_, max_z_pc_); // TODO
-
-    PCLPointCloud pc_ground;    // segmented ground plane
-    PCLPointCloud pc_nonground; // everything else
+    PCLPointCloud pc; // input cloud
+    pcl::fromROSMsg(*cloud, pc);
 
     // directly transform to map frame:
     pcl::transformPointCloud(pc, pc, sensorToWorld);
 
-    // just filter height range:
-    // pass_x.setInputCloud(pc.makeShared());
-    // pass_x.filter(pc);
-    // pass_y.setInputCloud(pc.makeShared());
-    // pass_y.filter(pc);
-    pass_z.setInputCloud(pc.makeShared());
-    pass_z.filter(pc);
+    // Every valid point is used: the ones that are not obstacles (floor, ceiling, far
+    // points, people) still clear the space in front of them. Invalid depth (NaN) says
+    // nothing about free space and is skipped.
+    octomap::Pointcloud returns;
+    returns.reserve(pc.size());
+    for (const PCLPoint &point : pc)
+    {
+        if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z))
+        {
+            returns.push_back(point.x, point.y, point.z);
+        }
+    }
 
-    pc_nonground = pc;
-
-    // pc_nonground is empty without ground segmentation
-    pc_ground.header = pc.header;
-    pc_nonground.header = pc.header;
-
-    // ROS_INFO_STREAM("INSERT SCAN START");
-
-    insertScan(sensorToWorldTf.transform.translation, pc_ground, pc_nonground, mapping_max_range_, minimum_range_);
-    //
-    //    double total_elapsed = (ros::WallTime::now() - startTime).toSec();
-    //    ROS_DEBUG("Pointcloud insertion in OctomapServer done (%zu+%zu pts
-    //    (ground/nonground), %f sec)",
-    //              pc_ground.size(), pc_nonground.size(), total_elapsed);
-    //
-    //    publishAll(cloud->header.stamp);
+    const geometry_msgs::msg::Vector3 &sensor_origin = sensorToWorldTf.transform.translation;
+    scan_integrator_.insertScan(*octree_, octomap::point3d(sensor_origin.x, sensor_origin.y, sensor_origin.z),
+                                returns, octomap::Pointcloud(), getAgentPositions(cloud->header.stamp),
+                                point_cloud_params_, rclcpp::Time(cloud->header.stamp).seconds());
 
     defineSocialGridMap();
 }
 
-void WorldModeler::insertScan(const geometry_msgs::msg::Vector3 &sensorOriginTf,
-                              const PCLPointCloud &ground,
-                              const PCLPointCloud &nonground, const double &max_range, const double &min_range)
+//! Agent positions.
+/*!
+ * Positions of the agents around the robot, in the fixed frame, at the time of a scan.
+ * Their tf frames are used when available and the reported poses otherwise.
+ */
+std::vector<octomap::point3d> WorldModeler::getAgentPositions(const builtin_interfaces::msg::Time &stamp)
 {
     std::lock_guard<std::recursive_mutex> lock(map_state_mutex_);
 
-    octomap::point3d sensorOrigin(sensorOriginTf.x, sensorOriginTf.y, sensorOriginTf.z);
+    std::vector<octomap::point3d> agent_positions;
 
-    if (!octree_->coordToKeyChecked(sensorOrigin, m_updateBBXMin) ||
-        !octree_->coordToKeyChecked(sensorOrigin, m_updateBBXMax))
+    for (const pedsim_msgs::msg::AgentState &agent_state : social_agents_in_radius_.agent_states)
     {
-        RCLCPP_ERROR(this->get_logger(), "Could not generate Key for origin %f %f %f",
-                     sensorOrigin.x(), sensorOrigin.y(), sensorOrigin.z());
-    }
+        const std::string agent_frame = "agent_" + std::to_string(agent_state.id);
+        geometry_msgs::msg::TransformStamped transform;
 
-#ifdef COLOR_OCTOMAP_SERVER
-    unsigned char *colors = new unsigned char[3];
-#endif
-
-    // instead of direct scan insertion, compute update to filter ground:
-    octomap::KeySet free_cells, occupied_cells;
-
-    // all other points: free on ray, occupied on endpoint:
-    double m_maxRange(max_range); // TODO
-    double m_minRange(min_range);
-    for (PCLPointCloud::const_iterator it = nonground.begin();
-         it != nonground.end(); ++it)
-    {
-        octomap::point3d point(it->x, it->y, it->z); // TODO
-        double point_distance = (point - sensorOrigin).norm();
-
-        if (m_minRange >= 0.0 && point_distance < m_minRange)
+        try
         {
-            continue;
+            transform = tf_buffer_->lookupTransform(fixed_frame_, agent_frame, stamp);
         }
-
-        // maxrange check
-        if ((m_maxRange < 0.0) || (point_distance <= m_maxRange))
+        catch (tf2::TransformException &ex)
         {
-
-            // free cells
-            if (octree_->computeRayKeys(sensorOrigin, point, m_keyRay))
+            try
             {
-                free_cells.insert(m_keyRay.begin(), m_keyRay.end());
-            }
-            // occupied endpoint
-            octomap::OcTreeKey key;
-            if (octree_->coordToKeyChecked(point, key))
-            {
-                occupied_cells.insert(key);
-
-                updateMinKey(key, m_updateBBXMin);
-                updateMaxKey(key, m_updateBBXMax);
-            }
-        }
-        else
-        {
-            // ray longer than maxrange:;
-            octomap::point3d new_end =
-                sensorOrigin + (point - sensorOrigin).normalized() * m_maxRange;
-            if (octree_->computeRayKeys(sensorOrigin, new_end, m_keyRay))
-            {
-                free_cells.insert(m_keyRay.begin(), m_keyRay.end());
-
-                octomap::OcTreeKey endKey;
-                if (octree_->coordToKeyChecked(new_end, endKey))
+                // the last tf of an agent can be arbitrarily old, then the reported pose is better
+                transform = tf_buffer_->lookupTransform(fixed_frame_, agent_frame, tf2::TimePointZero);
+                if ((rclcpp::Time(stamp) - rclcpp::Time(transform.header.stamp)).seconds() > 0.5)
                 {
-                    free_cells.insert(endKey);
-                    updateMinKey(endKey, m_updateBBXMin);
-                    updateMaxKey(endKey, m_updateBBXMax);
-                }
-                else
-                {
-                    RCLCPP_ERROR(this->get_logger(), "Could not generate Key for endpoint %f %f %f",
-                                 new_end.x(), new_end.y(), new_end.z());
+                    throw tf2::LookupException("the last tf of " + agent_frame + " is too old");
                 }
             }
+            catch (tf2::TransformException &ex)
+            {
+                // no tf for this agent, use the pose it was reported with
+                try
+                {
+                    transform = tf_buffer_->lookupTransform(fixed_frame_, agent_states_frame_, tf2::TimePointZero);
+                }
+                catch (tf2::TransformException &ex)
+                {
+                    RCLCPP_WARN_THROTTLE(this->get_logger(), steady_clock_, 5000,
+                                         "Cannot locate %s, its points will be mapped: %s", agent_frame.c_str(), ex.what());
+                    continue;
+                }
+
+                geometry_msgs::msg::Point position;
+                tf2::doTransform(agent_state.pose.position, position, transform);
+                agent_positions.emplace_back(position.x, position.y, position.z);
+                continue;
+            }
         }
+
+        agent_positions.emplace_back(transform.transform.translation.x,
+                                     transform.transform.translation.y,
+                                     transform.transform.translation.z);
     }
 
-    // mark free cells only if not seen occupied in this cloud
-    for (octomap::KeySet::iterator it = free_cells.begin(),
-                                   end = free_cells.end();
-         it != end; ++it)
-    {
-        if (occupied_cells.find(*it) == occupied_cells.end())
-        {
-            octree_->updateNode(*it, false);
-        }
-    }
-
-    // now mark all occupied cells:
-    for (octomap::KeySet::iterator it = occupied_cells.begin(),
-                                   end = occupied_cells.end();
-         it != end; it++)
-    {
-        octree_->updateNode(*it, true);
-    }
+    return agent_positions;
 }
 
 //! Odometry callback.
@@ -832,8 +705,23 @@ void WorldModeler::agentStatesCallback(const pedsim_msgs::msg::AgentStates::Shar
             actual_fov_distance_ = robot_distance_view_max_;
         }
 
+        if (!agent_states_msg->header.frame_id.empty())
+        {
+            agent_states_frame_ = agent_states_msg->header.frame_id;
+        }
+
         for (int i = 0; i < agent_states_msg->agent_states.size(); i++)
         {
+            // agents close enough to be seen by the sensors are filtered out of the map,
+            // whether or not they are relevant for the planner
+            double d_robot_agent = std::sqrt(std::pow(agent_states_msg->agent_states[i].pose.position.x - robot_odometry_->pose.pose.position.x, 2) +
+                                             std::pow(agent_states_msg->agent_states[i].pose.position.y - robot_odometry_->pose.pose.position.y, 2));
+
+            if (d_robot_agent < mapping_max_range_ + 2)
+            {
+                social_agents_in_radius_vector_.push_back(agent_states_msg->agent_states[i]);
+            }
+
             if (this->isAgentInRFOV(agent_states_msg->agent_states[i]))
             {
                 agent_state_vector.push_back(agent_states_msg->agent_states[i]);
@@ -845,7 +733,7 @@ void WorldModeler::agentStatesCallback(const pedsim_msgs::msg::AgentStates::Shar
 
         social_agents_in_radius_.agent_states = social_agents_in_radius_vector_;
 
-        relevant_agent_states_.header.stamp = rclcpp::Clock().now();
+        relevant_agent_states_.header.stamp = this->get_clock()->now();
         relevant_agent_states_.header.frame_id = map_frame_;
     }
     relevant_agents_pub_->publish(relevant_agent_states_);
@@ -860,11 +748,6 @@ bool WorldModeler::isAgentInRFOV(const pedsim_msgs::msg::AgentState agent_state)
 
     double d_robot_agent = std::sqrt(std::pow(agent_state.pose.position.x - robot_odometry_->pose.pose.position.x, 2) +
                                      std::pow(agent_state.pose.position.y - robot_odometry_->pose.pose.position.y, 2));
-
-    if (d_robot_agent < mapping_max_range_ + 2)
-    {
-        social_agents_in_radius_vector_.push_back(agent_state);
-    }
 
     if (d_robot_agent > actual_fov_distance_)
     {
@@ -1184,29 +1067,20 @@ void WorldModeler::publishMap()
     octomap_marker_pub_->publish(occupiedNodesVis);
 }
 
-void WorldModeler::filterSingleOutliers(sensor_msgs::msg::LaserScan &laser_scan_msg, std::vector<bool> &rngflags)
+void WorldModeler::filterSingleOutliers(sensor_msgs::msg::LaserScan &laser_scan_msg)
 {
-    int n(laser_scan_msg.ranges.size());
+    // compare against the original readings, and drop outliers as NaN so they are
+    // neither obstacles nor max range readings
+    const std::vector<float> ranges = laser_scan_msg.ranges;
+    int n(ranges.size());
     double thres(laser_scan_msg.range_max / 10.0);
-    std::vector<int> zeros;
     for (int i = 1; i < n - 1; i++)
     {
-        if ((std::abs(laser_scan_msg.ranges[i - 1] - laser_scan_msg.ranges[i]) > thres) &&
-            (std::abs(laser_scan_msg.ranges[i + 1] - laser_scan_msg.ranges[i]) > thres))
+        if ((std::abs(ranges[i - 1] - ranges[i]) > thres) &&
+            (std::abs(ranges[i + 1] - ranges[i]) > thres))
         {
-            laser_scan_msg.ranges[i] = 0.0;
-            zeros.push_back(i);
+            laser_scan_msg.ranges[i] = std::numeric_limits<float>::quiet_NaN();
         }
-
-        if (!rclcpp::ok())
-            break;
-    }
-
-    // Delete unnecessary flags
-    for (std::vector<int>::reverse_iterator rit = zeros.rbegin();
-         rit < zeros.rend(); rit++)
-    {
-        rngflags.erase(rngflags.begin() + *rit);
 
         if (!rclcpp::ok())
             break;
@@ -1224,8 +1098,21 @@ void WorldModeler::defineSocialGridMap()
 
     grid_map_.clearAll();
 
+    if (octree_->size() == 0)
+    {
+        RCLCPP_WARN(this->get_logger(), "Empty octree, keeping blank social grid map");
+        return;
+    }
+
     octree_->getMetricMin(min_bound(0), min_bound(1), min_bound(2));
     octree_->getMetricMax(max_bound(0), max_bound(1), max_bound(2));
+
+    const double pad = octree_->getResolution() * 5;
+
+    min_bound(0) -= pad;
+    min_bound(1) -= pad;
+    max_bound(0) += pad;
+    max_bound(1) += pad;
 
     grid_map::GridMapOctomapConverter::fromOctomap(*octree_, "obstacles", grid_map_, &min_bound, &max_bound);
     if (!grid_map_.exists("obstacles"))

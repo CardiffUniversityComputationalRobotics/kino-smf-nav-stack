@@ -1,8 +1,15 @@
 #ifndef WORLD_MODELER_HPP
 #define WORLD_MODELER_HPP
 
+#include <chrono>
+#include <cmath>
+#include <mutex>
+
 // SOCIAL HEATMAP
 #include "social_heatmap.hpp"
+
+// OCTOMAP SCAN INSERTION (marking, free space clearing, agents and noise filtering)
+#include "scan_integrator.hpp"
 
 // ROS2
 #include <rclcpp/rclcpp.hpp>
@@ -28,7 +35,7 @@
 // tf2
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/message_filter.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_ros/buffer.h>
 #include "message_filters/subscriber.h"
 #include <tf2_ros/create_timer_ros.h>
@@ -45,7 +52,7 @@ typedef octomap_msgs::srv::GetOctomap OctomapSrv;
 #include <grid_map_octomap/grid_map_octomap.hpp>
 #include <grid_map_msgs/srv/get_grid_map.hpp>
 #include <grid_map_cv/grid_map_cv.hpp>
-#include <cv_bridge/cv_bridge.h>
+#include <cv_bridge/cv_bridge.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
@@ -60,6 +67,7 @@ typedef octomap_msgs::srv::GetOctomap OctomapSrv;
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl_ros/transforms.hpp>
+#include <pcl/common/transforms.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/filters/crop_box.h>
 
@@ -67,8 +75,6 @@ typedef octomap_msgs::srv::GetOctomap OctomapSrv;
 #include <pedsim_msgs/msg/agent_states.hpp>
 
 #include <signal.h>
-#include <chrono>
-#include <mutex>
 
 typedef pcl::PointXYZ PCLPoint;
 typedef pcl::PointCloud<pcl::PointXYZ> PCLPointCloud;
@@ -109,8 +115,8 @@ public:
     double getExtendedPersonalSpace(pedsim_msgs::msg::AgentState agent_state, grid_map::Position position);
     //! Periodic callback to publish the map for visualization.
     void timerCallback();
-    void insertScan(const geometry_msgs::msg::Vector3 &sensorOriginTf, const PCLPointCloud &ground,
-                    const PCLPointCloud &nonground, const double &max_range, const double &min_range);
+    //! Positions (in the fixed frame) of the agents whose returns must not be mapped
+    std::vector<octomap::point3d> getAgentPositions(const builtin_interfaces::msg::Time &stamp);
     //! Service to save a binary Octomap (.bt)
     bool saveBinaryOctomapSrv(const std::shared_ptr<std_srvs::srv::Empty::Request> req,
                               std::shared_ptr<std_srvs::srv::Empty::Response> res);
@@ -137,8 +143,7 @@ private:
     void initializeGridMap();
 
     //! Filter outliers
-    void filterSingleOutliers(sensor_msgs::msg::LaserScan &laser_scan_msg,
-                              std::vector<bool> &rngflags);
+    void filterSingleOutliers(sensor_msgs::msg::LaserScan &laser_scan_msg);
 
     // ROS2
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr octomap_marker_pub_;
@@ -174,9 +179,6 @@ private:
     // Point Clouds
     std::string point_cloud_topic_, point_cloud_frame_;
 
-    // ROS Messages
-    sensor_msgs::msg::PointCloud2 cloud_;
-
     nav_msgs::msg::Odometry::SharedPtr robot_odometry_;
 
     SocialHeatmap social_heatmap_ = SocialHeatmap();
@@ -187,16 +189,35 @@ private:
 
     pedsim_msgs::msg::AgentStates social_agents_in_radius_;
     std::vector<pedsim_msgs::msg::AgentState> social_agents_in_radius_vector_;
+    std::string agent_states_frame_;
 
     double social_agent_radius_;
 
     // Octree
     octomap::OcTree *octree_;
     double octree_resol_, minimum_range_, rviz_timer_;
-    octomap::OcTreeKey m_updateBBXMin;
-    octomap::OcTreeKey m_updateBBXMax;
-    octomap::KeyRay m_keyRay; // temp storage for ray casting
     double mapping_max_range_, min_z_pc_, max_z_pc_;
+
+    // Octree sensor model (2 hits to become an obstacle)
+    double prob_hit_ = 0.7;
+    double prob_miss_ = 0.4;
+    double clamping_thres_min_ = 0.1192;
+    double clamping_thres_max_ = 0.971;
+    double occupancy_thres_ = 0.75;
+
+    // Scan insertion: free space clearing, noise and agents filtering (defaults for a D435 at 848x480)
+    ScanIntegrator scan_integrator_;
+    ScanIntegrator::Params point_cloud_params_, laser_scan_params_;
+    double pc_min_z_offset_ = 0.2;
+    double pc_max_obstacle_range_ = 3.5;
+    int pc_voxel_min_points_ = 3;
+    double pc_range_noise_ = 0.004;
+    double agent_filter_radius_ = 0.6;
+    double obstacle_decay_time_ = 0.0;
+    bool laser_zero_is_no_return_ = false;
+
+    //! for throttled warnings, the node clock may not run (use_sim_time without /clock)
+    rclcpp::Clock steady_clock_{RCL_STEADY_TIME};
 
     // grid map
     grid_map::GridMap grid_map_;
@@ -218,7 +239,7 @@ private:
     double fFieldOfView = 0.0;
 
     // Flags
-    tf2::Vector3 prev_map_to_fixed_pos_;
+    tf2::Vector3 prev_map_to_fixed_pos_{0.0, 0.0, 0.0};
     bool initialized_;
     bool nav_sts_available_;
     bool visualize_free_space_;
@@ -229,25 +250,8 @@ private:
     bool add_rays_;
     bool skip_sensor_callbacks_after_erase_;
 
-    double orientation_drift_, prev_map_to_fixed_yaw_, position_drift_;
+    double orientation_drift_, prev_map_to_fixed_yaw_ = 0.0, position_drift_;
     std::chrono::steady_clock::time_point skip_sensor_callbacks_until_;
-
-    // LaserScan => (x,y,z)
-    laser_geometry::LaserProjection laser_scan_projector_;
-
-protected:
-    inline static void updateMinKey(const octomap::OcTreeKey &in,
-                                    octomap::OcTreeKey &min)
-    {
-        for (unsigned i = 0; i < 3; ++i)
-            min[i] = std::min(in[i], min[i]);
-    };
-    inline static void updateMaxKey(const octomap::OcTreeKey &in,
-                                    octomap::OcTreeKey &max)
-    {
-        for (unsigned i = 0; i < 3; ++i)
-            max[i] = std::max(in[i], max[i]);
-    };
 };
 
 #endif // WORLD_MODELER_HPP
