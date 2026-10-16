@@ -100,6 +100,7 @@ class OnlinePlannFramework : public rclcpp::Node
 public:
     //! Constructor
     OnlinePlannFramework();
+    ~OnlinePlannFramework() override;
     //! Planner setup
     void planWithSimpleSetup();
     //! Periodic callback to solve the query.
@@ -138,6 +139,13 @@ public:
     std::vector<double> matrixToVector(const grid_map::Matrix &matrix);
 
 private:
+    static void freeStateVector(const ob::StateSpacePtr &space, std::vector<const ob::State *> &states);
+    static void freeStateVector(const ob::StateSpacePtr &space, std::vector<ob::State *> &states);
+    void clearGlobalSolutionPathStates();
+    void clearLocalSolutionPathStates();
+    void clearPastLocalSolutionPathStates();
+    void clearStoredStateVectors();
+
     // ! SUBSCRIBERS
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr nav_goal_sub_;
@@ -398,6 +406,59 @@ OnlinePlannFramework::OnlinePlannFramework()
     // goto_action_server_->start();
 }
 
+OnlinePlannFramework::~OnlinePlannFramework()
+{
+    clearStoredStateVectors();
+}
+
+void OnlinePlannFramework::freeStateVector(const ob::StateSpacePtr &space, std::vector<const ob::State *> &states)
+{
+    if (space)
+    {
+        for (const ob::State *state : states)
+        {
+            if (state)
+                space->freeState(const_cast<ob::State *>(state));
+        }
+    }
+    states.clear();
+}
+
+void OnlinePlannFramework::freeStateVector(const ob::StateSpacePtr &space, std::vector<ob::State *> &states)
+{
+    if (space)
+    {
+        for (ob::State *state : states)
+        {
+            if (state)
+                space->freeState(state);
+        }
+    }
+    states.clear();
+}
+
+void OnlinePlannFramework::clearGlobalSolutionPathStates()
+{
+    freeStateVector(simple_setup_global_ ? simple_setup_global_->getStateSpace() : ob::StateSpacePtr(), solution_path_states_);
+}
+
+void OnlinePlannFramework::clearLocalSolutionPathStates()
+{
+    freeStateVector(simple_setup_local_ ? simple_setup_local_->getStateSpace() : ob::StateSpacePtr(), local_solution_path_states_);
+}
+
+void OnlinePlannFramework::clearPastLocalSolutionPathStates()
+{
+    freeStateVector(simple_setup_local_ ? simple_setup_local_->getStateSpace() : ob::StateSpacePtr(), past_local_solution_path_states_);
+}
+
+void OnlinePlannFramework::clearStoredStateVectors()
+{
+    clearGlobalSolutionPathStates();
+    clearLocalSolutionPathStates();
+    clearPastLocalSolutionPathStates();
+}
+
 void OnlinePlannFramework::publishGoalReached()
 {
     if (goal_reached_signal_sent_)
@@ -517,8 +578,8 @@ void OnlinePlannFramework::goToActionCallback(const std::shared_ptr<kino_smf_mov
     //              nh_.resolveName("/kino_smf_move_base_mapper/clean_merge_octomap").c_str());
     //     usleep(1000000);
     // }
-    solution_path_states_.clear();
-    local_solution_path_states_.clear();
+    clearGlobalSolutionPathStates();
+    clearLocalSolutionPathStates();
     goal_available_ = true;
     goal_reached_signal_sent_ = false;
 
@@ -610,9 +671,7 @@ void OnlinePlannFramework::stopMotionCallback(const std_msgs::msg::Bool::SharedP
     for (double &value : goal_odom_frame_)
         value = 0.0;
 
-    solution_path_states_.clear();
-    local_solution_path_states_.clear();
-    past_local_solution_path_states_.clear();
+    clearStoredStateVectors();
 
     if (simple_setup_global_)
     {
@@ -681,8 +740,8 @@ void OnlinePlannFramework::queryGoalCallback(const geometry_msgs::msg::PoseStamp
     //              nh_.resolveName("/kino_smf_move_base_mapper/clean_merge_octomap").c_str());
     //     usleep(1000000);
     // }
-    solution_path_states_.clear();
-    local_solution_path_states_.clear();
+    clearGlobalSolutionPathStates();
+    clearLocalSolutionPathStates();
     goal_available_ = true;
     goal_reached_signal_sent_ = false;
 
@@ -1037,52 +1096,52 @@ void OnlinePlannFramework::planningTimerCallback()
 
             if (last_robot_pose_.getOrigin().getX() < goal_odom_frame_[0])
             {
-                if (last_robot_pose_.getOrigin().getX() - 15.0 < planning_bounds_x_[0])
+                if (last_robot_pose_.getOrigin().getX() - 5.0 < planning_bounds_x_[0])
                     bounds.setLow(0, planning_bounds_x_[0]);
                 else
-                    bounds.setLow(0, last_robot_pose_.getOrigin().getX() - 15.0);
+                    bounds.setLow(0, last_robot_pose_.getOrigin().getX() - 5.0);
 
                 if (goal_odom_frame_[0] + 5.0 > planning_bounds_x_[1])
                     bounds.setHigh(0, planning_bounds_x_[1]);
                 else
-                    bounds.setHigh(0, goal_odom_frame_[0] + 15.0);
+                    bounds.setHigh(0, goal_odom_frame_[0] + 5.0);
             }
             else
             {
-                if (last_robot_pose_.getOrigin().getX() + 15.0 > planning_bounds_x_[1])
+                if (last_robot_pose_.getOrigin().getX() + 5.0 > planning_bounds_x_[1])
                     bounds.setHigh(0, planning_bounds_x_[1]);
                 else
-                    bounds.setHigh(0, last_robot_pose_.getOrigin().getX() + 15.0);
+                    bounds.setHigh(0, last_robot_pose_.getOrigin().getX() + 5.0);
 
-                if (goal_odom_frame_[0] - 15.0 < planning_bounds_x_[0])
+                if (goal_odom_frame_[0] - 5.0 < planning_bounds_x_[0])
                     bounds.setLow(0, planning_bounds_x_[0]);
                 else
-                    bounds.setLow(0, goal_odom_frame_[0] - 15.0);
+                    bounds.setLow(0, goal_odom_frame_[0] - 5.0);
             }
 
             if (last_robot_pose_.getOrigin().getY() < goal_odom_frame_[1])
             {
-                if (last_robot_pose_.getOrigin().getY() - 15.0 < planning_bounds_y_[0])
+                if (last_robot_pose_.getOrigin().getY() - 5.0 < planning_bounds_y_[0])
                     bounds.setLow(1, planning_bounds_y_[0]);
                 else
-                    bounds.setLow(1, last_robot_pose_.getOrigin().getY() - 15.0);
+                    bounds.setLow(1, last_robot_pose_.getOrigin().getY() - 5.0);
 
-                if (goal_odom_frame_[1] + 15.0 > planning_bounds_y_[1])
+                if (goal_odom_frame_[1] + 5.0 > planning_bounds_y_[1])
                     bounds.setHigh(1, planning_bounds_y_[1]);
                 else
-                    bounds.setHigh(1, goal_odom_frame_[1] + 15.0);
+                    bounds.setHigh(1, goal_odom_frame_[1] + 5.0);
             }
             else
             {
-                if (last_robot_pose_.getOrigin().getY() + 15.0 > planning_bounds_y_[1])
+                if (last_robot_pose_.getOrigin().getY() + 5.0 > planning_bounds_y_[1])
                     bounds.setHigh(1, planning_bounds_y_[1]);
                 else
-                    bounds.setHigh(1, last_robot_pose_.getOrigin().getY() + 15.0);
+                    bounds.setHigh(1, last_robot_pose_.getOrigin().getY() + 5.0);
 
-                if (goal_odom_frame_[1] - 15.0 < planning_bounds_y_[0])
+                if (goal_odom_frame_[1] - 5.0 < planning_bounds_y_[0])
                     bounds.setLow(1, planning_bounds_y_[0]);
                 else
-                    bounds.setLow(1, goal_odom_frame_[1] - 15.0);
+                    bounds.setLow(1, goal_odom_frame_[1] - 5.0);
             }
 
             simple_setup_global_->getStateSpace()->as<ob::RealVectorStateSpace>()->setBounds(bounds);
@@ -1270,7 +1329,7 @@ void OnlinePlannFramework::planningTimerCallback()
                 if (reuse_last_best_solution_)
                 {
                     ob::StateSpacePtr space = simple_setup_global_->getStateSpace();
-                    solution_path_states_.clear();
+                    clearGlobalSolutionPathStates();
                     for (int i = path_states.size() - 1; i >= 0; i--)
                     {
                         ob::State *s = space->allocState();
@@ -1474,7 +1533,9 @@ void OnlinePlannFramework::planningTimerCallback()
                         ob::State *s = local_space->allocState();
                         s->as<ob::SE2StateSpace::StateType>()->setX(path_states[nearest_node]->as<ob::RealVectorStateSpace::StateType>()->values[0]);
                         s->as<ob::SE2StateSpace::StateType>()->setY(path_states[nearest_node]->as<ob::RealVectorStateSpace::StateType>()->values[1]);
-                        if (simple_setup_local_->getSpaceInformation()->checkMotion(s, past_local_solution_path_states_[0]->as<ob::SE2StateSpace::StateType>()))
+                        const bool can_connect_past_path = simple_setup_local_->getSpaceInformation()->checkMotion(s, past_local_solution_path_states_[0]->as<ob::SE2StateSpace::StateType>());
+                        local_space->freeState(s);
+                        if (can_connect_past_path)
                         {
                             is_past_path_in_line = true;
                         }
@@ -1646,15 +1707,18 @@ void OnlinePlannFramework::planningTimerCallback()
 
                             if (reuse_last_best_solution_)
                             {
-                                local_solution_path_states_.clear();
-                                past_local_solution_path_states_.clear();
+                                clearLocalSolutionPathStates();
+                                clearPastLocalSolutionPathStates();
                                 // solution_path_states_.reserve(path_states.size());
                                 for (int i = local_path_states.size() - 1; i >= 0; i--)
                                 {
-                                    ob::State *s = space->allocState();
-                                    space->copyState(s, local_path_states[i]);
-                                    local_solution_path_states_.push_back(s);
-                                    past_local_solution_path_states_.push_back(s);
+                                    ob::State *local_state = space->allocState();
+                                    space->copyState(local_state, local_path_states[i]);
+                                    local_solution_path_states_.push_back(local_state);
+
+                                    ob::State *past_state = space->allocState();
+                                    space->copyState(past_state, local_path_states[i]);
+                                    past_local_solution_path_states_.push_back(past_state);
                                 }
                             }
                         }
@@ -1698,6 +1762,7 @@ void OnlinePlannFramework::planningTimerCallback()
                             // ROS_INFO_STREAM("complete path: " << solution_path_for_control);
                             solution_path_control_pub_->publish(solution_path_for_control);
                         }
+                        freeStateVector(simple_setup_local_->getStateSpace(), controller_local_path_states);
                     }
                 }
                 else
@@ -1712,6 +1777,7 @@ void OnlinePlannFramework::planningTimerCallback()
                 //=======================================================================
                 // Clear previous solution path
                 //=======================================================================
+                freeStateVector(local_space, global_path_feedback);
                 simple_setup_global_->clear();
                 simple_setup_local_->clear();
             }
@@ -1925,6 +1991,7 @@ void OnlinePlannFramework::planningTimerCallback()
                     visualizeRRTLocal(path_visualize);
                     solution_path_control_pub_->publish(solution_path_for_control);
                 }
+                freeStateVector(local_space, local_solution_path_states_copy_);
             }
         }
     }
