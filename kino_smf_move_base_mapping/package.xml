@@ -30,6 +30,7 @@
 
   <depend>pedsim_msgs</depend>
   <depend>grid_map</depend>
+  <depend>cv_bridge</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
