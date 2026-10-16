@@ -77,7 +77,7 @@
 #include <grid_map_core/TypeDefs.hpp>
 #include "grid_map_cv/GridMapCvConverter.hpp"
 
-#include <cv_bridge/cv_bridge.h>
+#include <cv_bridge/cv_bridge.hpp>
 #include <opencv2/opencv.hpp>
 
 #include <torch/script.h>
@@ -205,8 +205,7 @@ private:
     double local_goal_yaw_;
 
     // ! learning model use parameters
-    std::string position_model_path_;
-    std::string orientation_model_path_;
+    std::string xy_yaw_model_path_;
 
     bool use_position_cnn_;
     bool use_orientation_cnn_;
@@ -215,8 +214,8 @@ private:
     double orientation_chance_;
     // ! models
 
-    torch::jit::script::Module xy_module_;
-    torch::jit::script::Module yaw_module_;
+    // combined position + orientation network (XYYawCNN), returns the (xy, yaw) grids
+    torch::jit::script::Module xy_yaw_module_;
     bool goal_reached_signal_sent_;
 };
 
@@ -279,8 +278,7 @@ OnlinePlannFramework::OnlinePlannFramework()
     this->declare_parameter("erase_map_topic", rclcpp::ParameterValue(std::string("erase_map")));
 
     // learning model use parameters
-    this->declare_parameter("position_model_path", rclcpp::ParameterValue(std::string("/home/steven/trained_model/model_xy_0.0001_final.pth")));
-    this->declare_parameter("orientation_model_path", rclcpp::ParameterValue(std::string("/home/steven/trained_model/model_yaw_0.1_final_artifact_mse.pth")));
+    this->declare_parameter("xy_yaw_model_path", rclcpp::ParameterValue(std::string("/home/cucr/tidup_models/model_xy_yaw_trt_fp16.ts")));
     this->declare_parameter("use_position_cnn", rclcpp::ParameterValue(true));
     this->declare_parameter("use_orientation_cnn", rclcpp::ParameterValue(true));
     this->declare_parameter("rejection_chance", rclcpp::ParameterValue(0.5));
@@ -320,8 +318,7 @@ OnlinePlannFramework::OnlinePlannFramework()
     local_use_social_heatmap_ = this->get_parameter("local_use_social_heatmap").as_bool();
     erase_map_topic_ = this->get_parameter("erase_map_topic").as_string();
 
-    position_model_path_ = this->get_parameter("position_model_path").as_string();
-    orientation_model_path_ = this->get_parameter("orientation_model_path").as_string();
+    xy_yaw_model_path_ = this->get_parameter("xy_yaw_model_path").as_string();
     use_position_cnn_ = this->get_parameter("use_position_cnn").as_bool();
     use_orientation_cnn_ = this->get_parameter("use_orientation_cnn").as_bool();
     // chances
@@ -787,34 +784,19 @@ void OnlinePlannFramework::planWithSimpleSetup()
 
     torch::Device device = torch::kCUDA;
 
+    // One network produces BOTH grids (XYYawCNN: shared trunk, two heads). The TensorRT
+    // build is a TorchScript module, the Torch-TensorRT runtime linked in registers its ops.
     if (use_position_cnn_)
     {
         try
         {
-            xy_module_ = torch::jit::load(position_model_path_);
-            xy_module_.to(device);
-            torch::NoGradGuard no_grad_guard;
-            xy_module_.eval();
+            xy_yaw_module_ = torch::jit::load(xy_yaw_model_path_);
+            xy_yaw_module_.to(device);
+            xy_yaw_module_.eval();
         }
         catch (const c10::Error &e)
         {
-            RCLCPP_ERROR(this->get_logger(), "Error loading the position model");
-            return;
-        }
-    }
-
-    if (use_orientation_cnn_)
-    {
-        try
-        {
-            yaw_module_ = torch::jit::load(orientation_model_path_);
-            yaw_module_.to(device);
-            torch::NoGradGuard no_grad_guard;
-            yaw_module_.eval();
-        }
-        catch (const c10::Error &e)
-        {
-            RCLCPP_ERROR(this->get_logger(), "Error loading the orientation model");
+            RCLCPP_ERROR(this->get_logger(), "Error loading the xy/yaw model: %s", e.what());
             return;
         }
     }
@@ -1579,8 +1561,6 @@ void OnlinePlannFramework::planningTimerCallback()
                 inferences_gridmap->setGeometry(grid_map::Length(10.0, 10.0), 0.1, grid_map::Position(0.0, 0.0));
                 inferences_gridmap->setFrameId("base_footprint");
 
-                torch::Device device = torch::kCUDA;
-
                 if (use_position_cnn_)
                 {
 
@@ -1589,24 +1569,19 @@ void OnlinePlannFramework::planningTimerCallback()
                     getLocalInputs(start, goal, grid_map_msg, cnn_input);
                     torch::NoGradGuard no_grad_guard;
 
-                    torch::Tensor xy_inference_tensor = xy_module_.forward(*cnn_input).toTensor().detach();
+                    // single forward returning (xy, yaw); the yaw grid already carries the +1
+                    // offset convention getSampleYaw() expects, with < 1 meaning "no data"
+                    auto outputs = xy_yaw_module_.forward(*cnn_input).toTuple();
+                    torch::Tensor xy_inference_tensor = outputs->elements()[0].toTensor().detach();
+                    torch::Tensor yaw_inference_tensor = outputs->elements()[1].toTensor().detach();
 
                     inferences_gridmap->add("xy_inference");
-
-                    grid_map::Matrix xy_inference_gridmap = tensorToGridMapMatrix(xy_inference_tensor);
-
-                    (*inferences_gridmap)["xy_inference"] = xy_inference_gridmap;
+                    (*inferences_gridmap)["xy_inference"] = tensorToGridMapMatrix(xy_inference_tensor);
 
                     if (use_orientation_cnn_)
                     {
-
-                        torch::Tensor yaw_inference_tensor = yaw_module_.forward(*cnn_input).toTensor().detach();
-
                         inferences_gridmap->add("yaw_inference");
-
-                        grid_map::Matrix yaw_inference_gridmap = tensorToGridMapMatrix(yaw_inference_tensor);
-
-                        (*inferences_gridmap)["yaw_inference"] = yaw_inference_gridmap;
+                        (*inferences_gridmap)["yaw_inference"] = tensorToGridMapMatrix(yaw_inference_tensor);
                     }
                 }
 
@@ -2321,10 +2296,15 @@ void OnlinePlannFramework::getLocalInputs(const std::vector<double> start, const
             grid_map::Index obs_index;
             grid_map.getIndex(obs_pos, obs_index);
 
-            double value = obstacles_grid_map_(obs_index(0), obs_index(1));
-            if (value > 20)
+            // the 10 m window around the robot may stick out of the mapped area
+            if (obs_index(0) >= 0 && obs_index(0) < obstacles_grid_map_.rows() &&
+                obs_index(1) >= 0 && obs_index(1) < obstacles_grid_map_.cols())
             {
-                xy_grid_map.at("obstacles", index) = 1.0;
+                double value = obstacles_grid_map_(obs_index(0), obs_index(1));
+                if (value > 20)
+                {
+                    xy_grid_map.at("obstacles", index) = 1.0;
+                }
             }
         }
 
@@ -2352,8 +2332,10 @@ void OnlinePlannFramework::getLocalInputs(const std::vector<double> start, const
         // ! GOAL
 
         grid_map::Index goal_index;
-        xy_grid_map.getIndex(grid_map::Position(goal[0] - start[0], goal[1] - start[1]), goal_index);
-        xy_grid_map.at("obstacles", goal_index) = 3.0;
+        if (xy_grid_map.getIndex(grid_map::Position(goal[0] - start[0], goal[1] - start[1]), goal_index))
+        {
+            xy_grid_map.at("obstacles", goal_index) = 3.0;
+        }
     }
 
     torch::Device device = torch::kCUDA;
@@ -2455,11 +2437,10 @@ grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const torch::Tensor
     // Create an Eigen matrix with the same dimensions
     grid_map::Matrix matrix(rows, cols);
 
-    // Ensure the tensor is contiguous
-    if (!tensor_2d.is_contiguous())
-    {
-        tensor_2d = tensor_2d.contiguous();
-    }
+    // one device->host copy for the whole grid: per-element item() on a CUDA tensor is a
+    // blocking transfer each, ~20k per planning cycle (~1.2 s on the Orin)
+    const torch::Tensor tensor_cpu = tensor_2d.to(torch::kCPU).contiguous();
+    const auto values = tensor_cpu.accessor<float, 2>();
 
     // tensor_2d = tensor_2d.t();
 
@@ -2468,8 +2449,7 @@ grid_map::Matrix OnlinePlannFramework::tensorToGridMapMatrix(const torch::Tensor
     {
         for (int j = 0; j < cols; ++j)
         {
-            // Access the tensor data and assign it to the matrix
-            matrix(i, j) = tensor_2d[i][j].item<float>();
+            matrix(i, j) = values[i][j];
         }
     }
 

@@ -32,6 +32,8 @@
 
   <!-- OMPL -->
   <depend>ompl</depend>
+
+  <depend>cv_bridge</depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>
