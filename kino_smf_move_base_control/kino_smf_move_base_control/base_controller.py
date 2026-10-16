@@ -1,6 +1,8 @@
 import rclpy
 import rclpy.node
+from rclpy.time import Time
 from geometry_msgs.msg import Twist, PoseStamped
+from tf2_geometry_msgs import do_transform_pose
 from nav_msgs.msg import Path, Odometry
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Bool
@@ -9,7 +11,7 @@ import math
 from numpy import nanmin
 from kino_smf_move_base_control.node import Node
 import time
-from tf2_ros import TransformListener, Buffer
+from tf2_ros import TransformListener, Buffer, TransformException
 
 scan_tolerance_front = 0.4
 scan_tolerance_side = 0.3
@@ -28,6 +30,10 @@ class PathFollower:
 
         # self.planner = planner
         self.goal = None
+        # the goal as received (usually in map) and the frame of the robot pose: the goal
+        # is used in the frame of the pose, which is the frame of the kino_smf paths
+        self.goal_msg = None
+        self.robot_pose_frame = ""
 
         self.following_path = []
 
@@ -107,11 +113,31 @@ class PathFollower:
 
     def goal_callback(self, data: PoseStamped):
         """Obtain goal from query"""
+        self.goal_msg = data
         self.goal = Node.from_pose(data.pose)
+        self.update_goal_frame()
         self.goal_available = True
         self.node_.get_logger().info(
             f"Goal received on {self.goal_topic}: x={self.goal.x:.3f}, y={self.goal.y:.3f}"
         )
+
+    def update_goal_frame(self):
+        """Express the goal in the frame of the robot pose and of the kino_smf paths"""
+        if self.goal_msg is None:
+            return
+        source = self.goal_msg.header.frame_id
+        target = self.robot_pose_frame
+        if not source or not target or source == target:
+            return
+        try:
+            transform = self.tf_buffer.lookup_transform(target, source, Time())
+        except TransformException as e:
+            self.node_.get_logger().warn(
+                f"Goal not converted from {source} to {target}: {e}",
+                throttle_duration_sec=5.0,
+            )
+            return
+        self.goal = Node.from_pose(do_transform_pose(self.goal_msg.pose, transform))
 
     def robot_pose_callback(self, data: Odometry):
         """Listens to robot current pose"""
@@ -129,6 +155,7 @@ class PathFollower:
         ]
 
         self.robot_position = Node.from_tf(position, orientation)
+        self.robot_pose_frame = data.header.frame_id
 
     def stop_motion_callback(self, stop_motion: Bool):
         """Listens to a flag if the motions has to be stopped"""
@@ -217,6 +244,9 @@ class PathFollower:
         if self.is_shutdown_initiated:
             self.stop_moving()
             return
+
+        # map -> odom may have been corrected while following the path
+        self.update_goal_frame()
 
         if (
             math.sqrt(
@@ -355,6 +385,8 @@ def main(args=None):
     try:
         while rclpy.ok():
             rclpy.spin_once(controller.node_)
+            if controller.goal_available:
+                controller.update_goal_frame()
             if (
                 len(controller.following_path) > 0
                 and controller.goal_available
