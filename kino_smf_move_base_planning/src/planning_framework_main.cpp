@@ -12,7 +12,9 @@
  * http://hdl.handle.net/10803/457592, http://www.tdx.cat/handle/10803/457592
  */
 
+#include <cstdlib>
 #include <iostream>
+#include <string>
 #include <vector>
 
 #include <boost/bind.hpp>
@@ -85,6 +87,21 @@
 namespace ob = ompl::base;
 namespace og = ompl::geometric;
 namespace oc = ompl::control;
+
+//! Expands a leading "~" to the home directory, so that the same path works for any user
+static std::string expandUserPath(const std::string &path)
+{
+    if (path.empty() || path[0] != '~' || (path.size() > 1 && path[1] != '/'))
+    {
+        return path;
+    }
+    const char *home = std::getenv("HOME");
+    if (home == nullptr || *home == '\0')
+    {
+        return path;
+    }
+    return std::string(home) + path.substr(1);
+}
 
 // typedef actionlib::SimpleActionServer<smf_move_base_msgs::action::Goto2D> SmfBaseGoToActionServer;
 
@@ -278,7 +295,8 @@ OnlinePlannFramework::OnlinePlannFramework()
     this->declare_parameter("erase_map_topic", rclcpp::ParameterValue(std::string("erase_map")));
 
     // learning model use parameters
-    this->declare_parameter("xy_yaw_model_path", rclcpp::ParameterValue(std::string("/home/cucr/tidup_models/model_xy_yaw_trt_fp16.ts")));
+    // a leading "~" is expanded to the home directory of the user running the planner
+    this->declare_parameter("xy_yaw_model_path", rclcpp::ParameterValue(std::string("~/kino_smf_models/model_xy_yaw_trt_fp16.ts")));
     this->declare_parameter("use_position_cnn", rclcpp::ParameterValue(true));
     this->declare_parameter("use_orientation_cnn", rclcpp::ParameterValue(true));
     this->declare_parameter("rejection_chance", rclcpp::ParameterValue(0.5));
@@ -318,7 +336,7 @@ OnlinePlannFramework::OnlinePlannFramework()
     local_use_social_heatmap_ = this->get_parameter("local_use_social_heatmap").as_bool();
     erase_map_topic_ = this->get_parameter("erase_map_topic").as_string();
 
-    xy_yaw_model_path_ = this->get_parameter("xy_yaw_model_path").as_string();
+    xy_yaw_model_path_ = expandUserPath(this->get_parameter("xy_yaw_model_path").as_string());
     use_position_cnn_ = this->get_parameter("use_position_cnn").as_bool();
     use_orientation_cnn_ = this->get_parameter("use_orientation_cnn").as_bool();
     // chances
@@ -790,13 +808,21 @@ void OnlinePlannFramework::planWithSimpleSetup()
     {
         try
         {
+            RCLCPP_INFO(this->get_logger(), "Loading the xy/yaw model %s", xy_yaw_model_path_.c_str());
             xy_yaw_module_ = torch::jit::load(xy_yaw_model_path_);
             xy_yaw_module_.to(device);
             xy_yaw_module_.eval();
         }
         catch (const c10::Error &e)
         {
-            RCLCPP_ERROR(this->get_logger(), "Error loading the xy/yaw model: %s", e.what());
+#if defined(KINO_SMF_WITH_TORCH_TENSORRT) && !KINO_SMF_WITH_TORCH_TENSORRT
+            RCLCPP_ERROR(this->get_logger(),
+                         "Error loading the xy/yaw model %s (this build has no Torch-TensorRT runtime, so "
+                         "TensorRT models cannot be loaded, only plain TorchScript ones): %s",
+                         xy_yaw_model_path_.c_str(), e.what());
+#else
+            RCLCPP_ERROR(this->get_logger(), "Error loading the xy/yaw model %s: %s", xy_yaw_model_path_.c_str(), e.what());
+#endif
             return;
         }
     }

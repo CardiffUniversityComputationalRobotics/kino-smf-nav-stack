@@ -6,21 +6,141 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# Set CUDA paths
-set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda)
-set(CMAKE_CUDA_COMPILER /usr/local/cuda/bin/nvcc)
-set(CUDACXX /usr/local/cuda/bin/nvcc)
-set(CUDA_LIBRARY_DIR /usr/local/cuda/lib64)
-link_directories("${CUDA_LIBRARY_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-# Ensure CUDA is found and configured
+# ==============================================================================
+# Platform detection
+# ==============================================================================
+# The package builds on x86_64 (amd64) workstations and on aarch64 (arm64) NVIDIA Jetsons.
+# Only the locations of CUDA, libtorch, Torch-TensorRT and TensorRT differ, so each one is
+# searched where it is usually installed on the detected platform. Any of them can be
+# forced, e.g. colcon build --cmake-args -DLIBTORCH_ROOT=/path/to/libtorch
+# (see "Installation" in the README).
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" KINO_SMF_ARCH)
+if(KINO_SMF_ARCH MATCHES "^(x86_64|amd64)$")
+  set(KINO_SMF_ARCH "x86_64")
+elseif(KINO_SMF_ARCH MATCHES "^(aarch64|arm64)$")
+  set(KINO_SMF_ARCH "aarch64")
+else()
+  message(WARNING "kino_smf: untested processor '${CMAKE_SYSTEM_PROCESSOR}', only x86_64 and aarch64 are supported")
+endif()
+
+set(KINO_SMF_JETSON FALSE)
+if(KINO_SMF_ARCH STREQUAL "aarch64" AND NOT CMAKE_CROSSCOMPILING)
+  if(EXISTS "/etc/nv_tegra_release")
+    set(KINO_SMF_JETSON TRUE)
+  elseif(EXISTS "/proc/device-tree/model")
+    file(READ "/proc/device-tree/model" _kino_smf_board)
+    if(_kino_smf_board MATCHES "Jetson")
+      set(KINO_SMF_JETSON TRUE)
+    endif()
+  endif()
+endif()
+
+set(KINO_SMF_HOME "$ENV{HOME}")
+if(NOT KINO_SMF_HOME)
+  set(KINO_SMF_HOME "/home/$ENV{USER}")
+endif()
+
+# ==============================================================================
+# CUDA toolkit
+# ==============================================================================
+# -DCUDA_TOOLKIT_ROOT_DIR, else $CUDA_HOME / $CUDA_PATH, /usr/local/cuda (created by JetPack
+# and by the NVIDIA packages), the newest /usr/local/cuda-X.Y or /usr (Ubuntu's nvidia-cuda-toolkit)
+if(NOT CUDA_TOOLKIT_ROOT_DIR)
+  file(GLOB _kino_smf_cuda_dirs LIST_DIRECTORIES true "/usr/local/cuda-*")
+  list(SORT _kino_smf_cuda_dirs COMPARE NATURAL ORDER DESCENDING)
+  foreach(_dir "$ENV{CUDA_HOME}" "$ENV{CUDA_PATH}" "/usr/local/cuda" ${_kino_smf_cuda_dirs} "/usr")
+    if(_dir AND EXISTS "${_dir}/bin/nvcc")
+      set(CUDA_TOOLKIT_ROOT_DIR "${_dir}")
+      break()
+    endif()
+  endforeach()
+endif()
+if(NOT CUDA_TOOLKIT_ROOT_DIR OR NOT EXISTS "${CUDA_TOOLKIT_ROOT_DIR}/bin/nvcc")
+  message(FATAL_ERROR
+    "kino_smf: no CUDA toolkit (bin/nvcc) found for ${KINO_SMF_ARCH}. Install it (JetPack "
+    "includes it on a Jetson) or pass -DCUDA_TOOLKIT_ROOT_DIR=/path/to/cuda")
+endif()
+if(NOT CMAKE_CUDA_COMPILER)
+  set(CMAKE_CUDA_COMPILER "${CUDA_TOOLKIT_ROOT_DIR}/bin/nvcc")
+endif()
+
+if(POLICY CMP0146)
+  cmake_policy(SET CMP0146 OLD) # FindCUDA, which the CMake config of libtorch uses too
+endif()
 find_package(CUDA REQUIRED)
 include_directories(${CUDA_INCLUDE_DIRS})
+# lib64 on x86_64, targets/<arch>-linux/lib on a Jetson: use the directory cudart was found in
+get_filename_component(CUDA_LIBRARY_DIR "${CUDA_CUDART_LIBRARY}" DIRECTORY)
+link_directories("${CUDA_LIBRARY_DIR}")
 
-# Set Torch path (~/libtorch: the libtorch zip on x86_64, the venv's pip torch on Jetson)
-set(LIBTORCH_ROOT "/home/$ENV{USER}/libtorch")
-set(LIBTORCH_LIBRARY_DIR "${LIBTORCH_ROOT}/lib")
-set(Torch_DIR "${LIBTORCH_ROOT}/share/cmake/Torch")
+# ==============================================================================
+# libtorch
+# ==============================================================================
+# -DLIBTORCH_ROOT / $LIBTORCH_ROOT, else ~/libtorch: the libtorch zip extracted there on
+# x86_64, a symlink to the torch package of the pip wheel on a Jetson (there is no libtorch
+# zip for aarch64). The other usual places are tried after it, the ones of the platform first.
+if(NOT LIBTORCH_ROOT AND DEFINED ENV{LIBTORCH_ROOT})
+  set(LIBTORCH_ROOT "$ENV{LIBTORCH_ROOT}")
+endif()
+
+if(LIBTORCH_ROOT)
+  if(NOT EXISTS "${LIBTORCH_ROOT}/share/cmake/Torch/TorchConfig.cmake")
+    message(FATAL_ERROR "kino_smf: LIBTORCH_ROOT=${LIBTORCH_ROOT} has no share/cmake/Torch/TorchConfig.cmake")
+  endif()
+  set(Torch_DIR "${LIBTORCH_ROOT}/share/cmake/Torch")
+elseif(NOT Torch_DIR OR NOT EXISTS "${Torch_DIR}/TorchConfig.cmake")
+  # libtorch zips extracted in versioned directories (newest first) and system-wide copies
+  file(GLOB _kino_smf_torch_zips LIST_DIRECTORIES true "${KINO_SMF_HOME}/libtorch*/libtorch")
+  list(SORT _kino_smf_torch_zips COMPARE NATURAL ORDER DESCENDING)
+  set(_kino_smf_torch_zip_roots ${_kino_smf_torch_zips} /opt/libtorch /usr/local/libtorch)
+
+  # torch package of a pip wheel: the one python3 imports (active venv or system), then the
+  # venvs in the home directory and pip --user installs
+  set(_kino_smf_torch_pip_roots "")
+  find_program(KINO_SMF_PYTHON3 NAMES python3)
+  mark_as_advanced(KINO_SMF_PYTHON3)
+  if(KINO_SMF_PYTHON3)
+    execute_process(
+      COMMAND "${KINO_SMF_PYTHON3}" -c
+        "import importlib.util as u; s = u.find_spec('torch'); print(s.submodule_search_locations[0] if s else '')"
+      OUTPUT_VARIABLE _kino_smf_python_torch
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET)
+    list(APPEND _kino_smf_torch_pip_roots ${_kino_smf_python_torch})
+  endif()
+  file(GLOB _kino_smf_venv_torch LIST_DIRECTORIES true
+    "${KINO_SMF_HOME}/*/lib/python3*/site-packages/torch"
+    "${KINO_SMF_HOME}/.*/lib/python3*/site-packages/torch")
+  list(APPEND _kino_smf_torch_pip_roots ${_kino_smf_venv_torch})
+
+  if(KINO_SMF_ARCH STREQUAL "aarch64")
+    set(_kino_smf_torch_roots "${KINO_SMF_HOME}/libtorch" ${_kino_smf_torch_pip_roots} ${_kino_smf_torch_zip_roots})
+  else()
+    set(_kino_smf_torch_roots "${KINO_SMF_HOME}/libtorch" ${_kino_smf_torch_zip_roots} ${_kino_smf_torch_pip_roots})
+  endif()
+  list(REMOVE_DUPLICATES _kino_smf_torch_roots)
+
+  foreach(_root IN LISTS _kino_smf_torch_roots)
+    if(EXISTS "${_root}/share/cmake/Torch/TorchConfig.cmake")
+      set(Torch_DIR "${_root}/share/cmake/Torch")
+      break()
+    endif()
+  endforeach()
+
+  if(NOT Torch_DIR OR NOT EXISTS "${Torch_DIR}/TorchConfig.cmake")
+    if(KINO_SMF_ARCH STREQUAL "aarch64")
+      set(_kino_smf_hint "install the torch wheel built for your JetPack (e.g. in a venv) and link its site-packages/torch to ~/libtorch")
+    else()
+      set(_kino_smf_hint "extract the libtorch zip from pytorch.org (cxx11 ABI, CUDA build matching the toolkit) to ~/libtorch")
+    endif()
+    string(REPLACE ";" "\n  " _kino_smf_searched "${_kino_smf_torch_roots}")
+    message(FATAL_ERROR "kino_smf: libtorch not found for ${KINO_SMF_ARCH}: ${_kino_smf_hint}, "
+      "or pass -DLIBTORCH_ROOT=/path/to/libtorch. Searched:\n  ${_kino_smf_searched}")
+  endif()
+endif()
+
 find_package(Torch REQUIRED)
 # Use the C++ standard Torch declares on its target (C++20 for torch 2.14), which does not propagate
 get_target_property(TORCH_CXX_STANDARD torch CXX_STANDARD)
@@ -28,39 +148,72 @@ if(TORCH_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD ${TORCH_CXX_STANDARD})
 endif()
 
-# With pip torch (Jetson), the TensorRT and Torch-TensorRT wheels sit next to it in site-packages
-get_filename_component(LIBTORCH_REAL_ROOT "${LIBTORCH_ROOT}" REALPATH)
-get_filename_component(LIBTORCH_PARENT_DIR "${LIBTORCH_REAL_ROOT}" DIRECTORY)
+# libtorch root, and the directory holding it: site-packages for a pip torch, where the
+# TensorRT and Torch-TensorRT wheels are installed too
+get_filename_component(KINO_SMF_TORCH_ROOT "${Torch_DIR}/../../.." ABSOLUTE)
+set(LIBTORCH_LIBRARY_DIR "${KINO_SMF_TORCH_ROOT}/lib")
+get_filename_component(_kino_smf_torch_real_root "${KINO_SMF_TORCH_ROOT}" REALPATH)
+get_filename_component(KINO_SMF_TORCH_PARENT_DIR "${_kino_smf_torch_real_root}" DIRECTORY)
 
-# TENSOR RT
+# ==============================================================================
+# Torch-TensorRT and TensorRT
+# ==============================================================================
+# A TensorRT model (e.g. model_xy_yaw_trt_fp16.ts) is a TorchScript module whose engine ops
+# are registered by the Torch-TensorRT runtime:
+#   x86_64: the libtorchtrt release tarball (~/libtorchtrt-*-x86_64-linux/torch_tensorrt)
+#           with the system TensorRT (/usr/lib/x86_64-linux-gnu)
+#   Jetson: the torch_tensorrt and tensorrt wheels installed next to the pip torch
+# AUTO links the runtime when it is found, ON requires it, OFF never links it. Without it
+# only plain TorchScript models can be loaded.
+set(KINO_SMF_TORCH_TENSORRT "AUTO" CACHE STRING "Link the Torch-TensorRT runtime: AUTO, ON or OFF")
+set_property(CACHE KINO_SMF_TORCH_TENSORRT PROPERTY STRINGS AUTO ON OFF)
+string(TOUPPER "${KINO_SMF_TORCH_TENSORRT}" _kino_smf_trt_mode)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-set(TENSORRT_LIBRARY_HINTS "${LIBTORCH_PARENT_DIR}/tensorrt_libs")
-find_package(TensorRT REQUIRED)
+set(KINO_SMF_WITH_TORCH_TENSORRT FALSE)
+if(_kino_smf_trt_mode STREQUAL "AUTO" OR _kino_smf_trt_mode)
+  set(_kino_smf_trt_required "")
+  if(NOT _kino_smf_trt_mode STREQUAL "AUTO")
+    set(_kino_smf_trt_required REQUIRED)
+  endif()
 
-set(TORCH_TRT_PATH "/home/$ENV{USER}/libtorchtrt-2.10.0-tensorrt10.14.1-cuda130-libtorch2.10.0-x86_64-linux/torch_tensorrt")
-if(EXISTS "${LIBTORCH_PARENT_DIR}/torch_tensorrt/lib")
-  set(TORCH_TRT_PATH "${LIBTORCH_PARENT_DIR}/torch_tensorrt")
+  set(TORCH_TENSORRT_HINTS "${KINO_SMF_TORCH_PARENT_DIR}/torch_tensorrt")
+  find_package(TorchTensorRT ${_kino_smf_trt_required})
+  if(TorchTensorRT_FOUND)
+    # the TensorRT the runtime was built against: same soname, pip wheel next to torch first
+    set(TENSORRT_LIBRARY_HINTS "${KINO_SMF_TORCH_PARENT_DIR}/tensorrt_libs")
+    set(TENSORRT_SONAME_VERSION "${TORCH_TENSORRT_NVINFER_SOVERSION}")
+    find_package(TensorRT ${_kino_smf_trt_required})
+    if(TensorRT_FOUND)
+      set(KINO_SMF_WITH_TORCH_TENSORRT TRUE)
+    endif()
+  endif()
+
+  if(NOT KINO_SMF_WITH_TORCH_TENSORRT)
+    message(WARNING
+      "kino_smf: building WITHOUT the Torch-TensorRT runtime, so TensorRT models (*_trt_*.ts) "
+      "cannot be loaded, only plain TorchScript ones. If Torch-TensorRT and TensorRT are installed "
+      "somewhere else, pass -DTORCH_TENSORRT_ROOT=<dir> and/or -DTENSORRT_ROOT=<dir>, "
+      "-DKINO_SMF_TORCH_TENSORRT=OFF silences this warning.")
+  endif()
 endif()
-set(TORCH_TRT_INCLUDE_DIR "${TORCH_TRT_PATH}/include")
-set(TORCH_TRT_LIBRARY_DIR "${TORCH_TRT_PATH}/lib")
-set(TORCH_TRT_LIBSTDCXX "/opt/nvidia/nsight-compute/2025.3.1/host/linux-desktop-glibc_2_11_3-x64/libstdc++.so.6")
-get_filename_component(TORCH_TRT_LIBSTDCXX_REAL "${TORCH_TRT_LIBSTDCXX}" REALPATH)
-set(TORCH_TRT_RUNTIME_DIR "${CMAKE_CURRENT_BINARY_DIR}/runtime_libs")
-set(TORCH_TRT_INSTALL_RUNTIME_DIR "lib/${PROJECT_NAME}/runtime_libs")
-file(MAKE_DIRECTORY "${TORCH_TRT_RUNTIME_DIR}")
-# nsight-compute's libstdc++ only exists on the x86_64 machine
-if(EXISTS "${TORCH_TRT_LIBSTDCXX}")
-  file(CREATE_LINK
-    "${TORCH_TRT_LIBSTDCXX_REAL}"
-    "${TORCH_TRT_RUNTIME_DIR}/libstdc++.so.6"
-    SYMBOLIC COPY_ON_ERROR)
+
+if(KINO_SMF_JETSON)
+  set(_kino_smf_platform "${KINO_SMF_ARCH} (NVIDIA Jetson)")
 else()
-  set(TORCH_TRT_LIBSTDCXX "")
+  set(_kino_smf_platform "${KINO_SMF_ARCH}")
 endif()
-
-include_directories("${TORCH_TRT_INCLUDE_DIR}")
-link_directories("${TORCH_TRT_LIBRARY_DIR}")
+message(STATUS "kino_smf: platform        ${_kino_smf_platform}")
+message(STATUS "kino_smf: CUDA            ${CUDA_TOOLKIT_ROOT_DIR} (${CUDA_VERSION_STRING})")
+message(STATUS "kino_smf: libtorch        ${KINO_SMF_TORCH_ROOT} (${Torch_VERSION})")
+if(KINO_SMF_WITH_TORCH_TENSORRT)
+  message(STATUS "kino_smf: Torch-TensorRT  ${TORCH_TENSORRT_ROOT_DIR}")
+  message(STATUS "kino_smf: TensorRT        ${TENSORRT_LIBRARIES}")
+  if(TORCH_TENSORRT_LIBSTDCXX)
+    message(STATUS "kino_smf: libstdc++       ${TORCH_TENSORRT_LIBSTDCXX} (shipped in runtime_libs)")
+  endif()
+else()
+  message(STATUS "kino_smf: Torch-TensorRT  not used")
+endif()
 
 # Find dependencies
 find_package(ament_cmake REQUIRED)
@@ -132,23 +285,36 @@ add_executable(kino_smf_move_base_planner
   src/iterators/ReverseCircleIterator.cpp
 )
 
-add_library(torchtrt_runtime SHARED IMPORTED)
-set_target_properties(torchtrt_runtime PROPERTIES
-    IMPORTED_LOCATION "${TORCH_TRT_LIBRARY_DIR}/libtorchtrt_runtime.so"
-)
-add_library(torchtrt_plugins SHARED IMPORTED)
-set_target_properties(torchtrt_plugins PROPERTIES
-    IMPORTED_LOCATION "${TORCH_TRT_LIBRARY_DIR}/libtorchtrt_plugins.so"
-)
-add_library(torch_global_deps SHARED IMPORTED)
-set_target_properties(torch_global_deps PROPERTIES
-    IMPORTED_LOCATION "${LIBTORCH_LIBRARY_DIR}/libtorch_global_deps.so"
-)
-# Torch-TensorRT 2.14 also needs libtorch_nvshmem.so, which its own RUNPATH cannot find
-set(TORCH_NVSHMEM_LIB "")
-if(EXISTS "${LIBTORCH_LIBRARY_DIR}/libtorch_nvshmem.so")
-  set(TORCH_NVSHMEM_LIB "${LIBTORCH_LIBRARY_DIR}/libtorch_nvshmem.so")
+# Deep learning libraries and the directories the executable finds them in at runtime.
+# libtorch_global_deps loads the CUDA libraries of torch, as importing torch does in python.
+set(KINO_SMF_DL_LIBRARIES ${TORCH_LIBRARIES})
+if(EXISTS "${LIBTORCH_LIBRARY_DIR}/libtorch_global_deps.so")
+  list(APPEND KINO_SMF_DL_LIBRARIES "${LIBTORCH_LIBRARY_DIR}/libtorch_global_deps.so")
 endif()
+set(KINO_SMF_RPATH "${LIBTORCH_LIBRARY_DIR}" "${CUDA_LIBRARY_DIR}")
+
+if(KINO_SMF_WITH_TORCH_TENSORRT)
+  # Torch-TensorRT 2.14 also needs libtorch_nvshmem.so, which its own RUNPATH cannot find
+  if(EXISTS "${LIBTORCH_LIBRARY_DIR}/libtorch_nvshmem.so")
+    list(APPEND KINO_SMF_DL_LIBRARIES "${LIBTORCH_LIBRARY_DIR}/libtorch_nvshmem.so")
+  endif()
+  list(APPEND KINO_SMF_DL_LIBRARIES ${TORCH_TENSORRT_LIBRARIES} ${TENSORRT_LIBRARIES})
+  list(APPEND KINO_SMF_RPATH "${TORCH_TENSORRT_LIBRARY_DIR}" "${TENSORRT_LIBRARY_DIR}")
+
+  # newer libstdc++ the prebuilt Torch-TensorRT needs: linked, and shipped in runtime_libs
+  # next to the executable, first in its RUNPATH so that it wins over the system one
+  if(TORCH_TENSORRT_LIBSTDCXX)
+    set(_kino_smf_runtime_dir "${CMAKE_CURRENT_BINARY_DIR}/runtime_libs")
+    file(MAKE_DIRECTORY "${_kino_smf_runtime_dir}")
+    file(CREATE_LINK
+      "${TORCH_TENSORRT_LIBSTDCXX}"
+      "${_kino_smf_runtime_dir}/libstdc++.so.6"
+      SYMBOLIC COPY_ON_ERROR)
+    list(APPEND KINO_SMF_DL_LIBRARIES "${TORCH_TENSORRT_LIBSTDCXX}")
+    list(INSERT KINO_SMF_RPATH 0 "$ORIGIN/runtime_libs")
+  endif()
+endif()
+list(REMOVE_DUPLICATES KINO_SMF_RPATH)
 
 # Note: no OpenMP here on purpose. libtorch ships its own libgomp and the dependency
 # tree drags in the system one; two OpenMP runtimes in one process corrupt the heap.
@@ -159,22 +325,20 @@ endif()
 ament_target_dependencies(kino_smf_move_base_planner ${dependencies})
 target_link_libraries(kino_smf_move_base_planner
   ${OMPL_LIBRARIES}
-  ${TORCH_LIBRARIES}
-  torch_global_deps
-  ${TORCH_NVSHMEM_LIB}
-  torchtrt_runtime
-  torchtrt_plugins
-  ${TORCH_TRT_LIBSTDCXX}
+  ${KINO_SMF_DL_LIBRARIES}
   ${CUDA_LIBRARIES}
-  ${TENSORRT_LIBRARIES}
 )
+if(KINO_SMF_WITH_TORCH_TENSORRT)
+  target_compile_definitions(kino_smf_move_base_planner PRIVATE KINO_SMF_WITH_TORCH_TENSORRT=1)
+else()
+  target_compile_definitions(kino_smf_move_base_planner PRIVATE KINO_SMF_WITH_TORCH_TENSORRT=0)
+endif()
 
-# Set runtime path for the Torch, Torch-TensorRT, CUDA and TensorRT libraries
+# Runtime path of the Torch, Torch-TensorRT, CUDA and TensorRT libraries, the same in the
+# build and install trees
 set_target_properties(kino_smf_move_base_planner PROPERTIES
     BUILD_WITH_INSTALL_RPATH TRUE
-    INSTALL_RPATH "$ORIGIN/runtime_libs;${LIBTORCH_LIBRARY_DIR};${TORCH_TRT_LIBRARY_DIR};${CUDA_LIBRARY_DIR};${TENSORRT_LIBRARY_DIR}"
-    BUILD_RPATH "$ORIGIN/runtime_libs;${LIBTORCH_LIBRARY_DIR};${TORCH_TRT_LIBRARY_DIR};${CUDA_LIBRARY_DIR};${TENSORRT_LIBRARY_DIR}"
-    SKIP_BUILD_RPATH FALSE
+    INSTALL_RPATH "${KINO_SMF_RPATH}"
     LINK_FLAGS "-Wl,--no-as-needed"
 )
 
@@ -182,10 +346,10 @@ set_target_properties(kino_smf_move_base_planner PROPERTIES
 install(TARGETS
   kino_smf_move_base_planner
   DESTINATION lib/${PROJECT_NAME})
-if(TORCH_TRT_LIBSTDCXX)
+if(KINO_SMF_WITH_TORCH_TENSORRT AND TORCH_TENSORRT_LIBSTDCXX)
   install(FILES
-    "${TORCH_TRT_LIBSTDCXX_REAL}"
-    DESTINATION "${TORCH_TRT_INSTALL_RUNTIME_DIR}"
+    "${TORCH_TENSORRT_LIBSTDCXX}"
+    DESTINATION "lib/${PROJECT_NAME}/runtime_libs"
     RENAME libstdc++.so.6)
 endif()
 
