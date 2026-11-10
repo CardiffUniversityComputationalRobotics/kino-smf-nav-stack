@@ -53,7 +53,6 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/message_filter.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-// #include <actionlib/server/simple_action_server.h>
 
 // Planner
 #include <new_state_sampler.h>
@@ -102,8 +101,6 @@ static std::string expandUserPath(const std::string &path)
     }
     return std::string(home) + path.substr(1);
 }
-
-// typedef actionlib::SimpleActionServer<smf_move_base_msgs::action::Goto2D> SmfBaseGoToActionServer;
 
 //!  OnlinePlannFramework class.
 /*!
@@ -499,19 +496,6 @@ void OnlinePlannFramework::publishGoalReached()
 void OnlinePlannFramework::goToActionCallback(const std::shared_ptr<kino_smf_move_base_msgs::action::Goto2D::Goal> goto_req)
 {
 
-    // if (!is_sweep_done_)
-    // {
-    // std_msgs::Bool make_sweep;
-    // double sleep_time = 2 * M_PI / (max_rot_vel_ / 4);
-
-    // make_sweep.data = true;
-    // sweep_motion_pub_.publish(make_sweep);
-
-    // ros::Duration(sleep_time).sleep();
-
-    // is_sweep_done_ = true;
-    // }
-
     goal_map_frame_[0] = goto_req->goal.x;
     goal_map_frame_[1] = goto_req->goal.y;
     goal_map_frame_[2] = goto_req->goal.theta;
@@ -583,16 +567,6 @@ void OnlinePlannFramework::goToActionCallback(const std::shared_ptr<kino_smf_mov
 
     goal_radius_ = xy_goal_tolerance_;
 
-    //=======================================================================
-    // Clean and merge octomap
-    //=======================================================================
-    // ! COMMENTED TO AVOID UNNEEDED PROCESSING
-    // while (nh_.ok() && !ros::service::call("/kino_smf_move_base_mapper/clean_merge_octomap", req, resp))  //
-    // {
-    //     ROS_WARN("Request to %s failed; trying again...",
-    //              nh_.resolveName("/kino_smf_move_base_mapper/clean_merge_octomap").c_str());
-    //     usleep(1000000);
-    // }
     clearGlobalSolutionPathStates();
     clearLocalSolutionPathStates();
     goal_available_ = true;
@@ -744,17 +718,6 @@ void OnlinePlannFramework::queryGoalCallback(const geometry_msgs::msg::PoseStamp
     goal_odom_frame_[1] = goal_point_odom_frame.y();
     goal_odom_frame_[2] = goal_map_frame_[2] - yaw;
 
-    //=======================================================================
-    // Clean and merge octomap
-    //=======================================================================
-    // ! COMMENTED TO AVOID UNNEEDED PROCESSING
-    // while (nh_.ok() && !ros::service::call("/kino_smf_move_base_mapper/clean_merge_octomap", req, resp))  //
-    // TODO
-    // {
-    //     ROS_WARN("Request to %s failed; trying again...",
-    //              nh_.resolveName("/kino_smf_move_base_mapper/clean_merge_octomap").c_str());
-    //     usleep(1000000);
-    // }
     clearGlobalSolutionPathStates();
     clearLocalSolutionPathStates();
     goal_available_ = true;
@@ -1760,7 +1723,6 @@ void OnlinePlannFramework::planningTimerCallback()
                                 }
                                 solution_path_for_control.poses.push_back(p);
                             }
-                            // ROS_INFO_STREAM("complete path: " << solution_path_for_control);
                             solution_path_control_pub_->publish(solution_path_for_control);
                         }
                         freeStateVector(simple_setup_local_->getStateSpace(), controller_local_path_states);
@@ -1833,7 +1795,6 @@ void OnlinePlannFramework::planningTimerCallback()
                 {
                     if (simple_setup_local_->getStateValidityChecker()->isValid(local_solution_path_states_copy_[0]))
                     {
-                        // ROS_INFO("%s:\n\tadding first waypoint\n", ros::this_node::getName().c_str());
                         geometry_msgs::msg::PoseStamped p;
                         p.pose.position.x = local_solution_path_states_copy_[0]->as<ob::SE2StateSpace::StateType>()->getX();
                         p.pose.position.y = local_solution_path_states_copy_[0]->as<ob::SE2StateSpace::StateType>()->getY();
@@ -1867,7 +1828,6 @@ void OnlinePlannFramework::planningTimerCallback()
                                                                                     local_solution_path_states_copy_[i + 1]) ||
                             (local_solution_path_states_copy_.size() > 3 && i < 3))
                         {
-                            // ROS_INFO("%s:\n\tadding possible waypoint\n", ros::this_node::getName().c_str());
 
                             geometry_msgs::msg::PoseStamped p;
 
@@ -1900,7 +1860,6 @@ void OnlinePlannFramework::planningTimerCallback()
                         }
                         else
                         {
-                            // ROS_INFO("%s:\n\tfound not possible motion\n", ros::this_node::getName().c_str());
 
                             double angle;
 
@@ -1934,8 +1893,6 @@ void OnlinePlannFramework::planningTimerCallback()
                                 if (!simple_setup_local_->getSpaceInformation()->checkMotion(
                                         local_solution_path_states_copy_[i], posEv->as<ob::State>()))
                                 {
-                                    // ROS_INFO("%s:\n\tadding last position\n",
-                                    // ros::this_node::getName().c_str());
                                     ob::ScopedState<> posEv(simple_setup_local_->getStateSpace());
 
                                     posEv[0] = double(local_solution_path_states_copy_[i]

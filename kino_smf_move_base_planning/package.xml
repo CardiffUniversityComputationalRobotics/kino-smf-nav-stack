@@ -25,6 +25,7 @@
   <depend>nav_msgs</depend>
   <depend>grid_map</depend>
   <depend>image_transport</depend>
+  <exec_depend>launch_ros</exec_depend>
 
   <!-- kino smf nav stack -->
   <depend>kino_smf_move_base_msgs</depend>

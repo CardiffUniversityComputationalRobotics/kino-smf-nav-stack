@@ -80,5 +80,7 @@ target_link_libraries(kino_smf_move_base_mapper ${OCTOMAP_LIBRARIES})
 install(TARGETS
   kino_smf_move_base_mapper
   DESTINATION lib/${PROJECT_NAME})
+install(DIRECTORY launch config
+  DESTINATION share/${PROJECT_NAME})
 
 ament_package()

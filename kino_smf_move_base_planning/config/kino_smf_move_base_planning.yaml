@@ -1,42 +1,45 @@
-# Path planning parameters
-world_frame: map
-planner_name: RRTstarMod # RRT, RRTstar
-local_planner_name: SST
-# local_planner_name: RRTstarMod
-planning_bounds_x: [-50.0, 50.0] # [x_min, x_max]
-planning_bounds_y: [-50.0, 50.0] # [y_min, y_max]
-dynamic_bounds: True # the bounds of the planner will change according to the start and goal configurations
-start_state: [0.0, 0.0, 0.0] # [X, Y, Yaw]
-goal_state: [5.0, -1.0, 0.0] # [X, Y, Yaw]
-timer_period: 1.5
-solving_time: 0.5
-opport_collision_check: True
-reuse_last_best_solution: True
-optimization_objective: SocialHeatmap #PathLength, SocialHeatmap
-local_optimization_objective: SocialComfort
-motion_cost_interpolation: False
-xy_goal_tolerance: 0.1
-local_xy_goal_tolerance: 1
-visualize_tree: False
-global_time_percent: 10
+kino_smf_move_base_planner:
+  ros__parameters:
+    use_sim_time: false # true in simulation
+    # Path planning parameters
+    world_frame: map
+    planner_name: RRTstarMod # RRT, RRTstar, RRTstarMod, PRMstar
+    local_planner_name: SST # SST, RRT
+    planning_bounds_x: [-50.0, 50.0] # [x_min, x_max]
+    planning_bounds_y: [-50.0, 50.0] # [y_min, y_max]
+    dynamic_bounds: True # the bounds of the planner will change according to the start and goal configurations
+    timer_period: 0.36
+    solving_time: 0.35
+    global_time_percent: 20.0
+    opport_collision_check: True
+    reuse_last_best_solution: True
+    local_reuse_last_best_solution: True
+    optimization_objective: SocialHeatmap # PathLength, SocialHeatmap
+    local_optimization_objective: SocialComfort # PathLength, SocialHeatmap, SocialComfort
+    motion_cost_interpolation: True
+    xy_goal_tolerance: 0.05
+    yaw_goal_tolerance: 0.75
+    local_xy_goal_tolerance: 1.0
+    local_path_range: 4.0
+    local_use_social_heatmap: False
+    visualize_tree: False
 
-# SST vel params
-max_trans_vel: 0.22
-max_rot_vel: 0.6
+    # SST vel params
+    max_trans_vel: 0.5
+    max_rot_vel: 1.5
 
-# Collision checking
-octomap_service: /octomap_binary
-robot_base_radius: 0.35
+    # Collision checking
+    robot_base_radius: 0.3
 
-odometry_topic: /pepper/odom_groundtruth
-query_goal_topic: /kino_smf_move_base_planner/query_goal
-solution_path_topic: /kino_smf_move_base_planner/solution_path
-erase_map_topic: /kino_smf_move_base_mapper/erase_map
+    odometry_topic: /odom
+    query_goal_topic: /goal_pose
+    solution_path_topic: /kino_smf_move_base_planner/solution_path
 
-goto_action: /smf_goto_action
+    grid_map_service: "/get_grid_map"
 
-local_path_range: 4.0
-local_reuse_last_best_solution: True
-local_use_social_heatmap: False
-
-grid_map_service: "/kino_smf_move_base_mapper/get_grid_map"
+    # cnn usage
+    xy_yaw_model_path: "~/kino_smf_models/model_xy_yaw_trt_fp16.ts"
+    use_position_cnn: True
+    use_orientation_cnn: True
+    rejection_chance: 0.5
+    orientation_chance: 1.0

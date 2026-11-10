@@ -346,6 +346,8 @@ set_target_properties(kino_smf_move_base_planner PROPERTIES
 install(TARGETS
   kino_smf_move_base_planner
   DESTINATION lib/${PROJECT_NAME})
+install(DIRECTORY launch config
+  DESTINATION share/${PROJECT_NAME})
 if(KINO_SMF_WITH_TORCH_TENSORRT AND TORCH_TENSORRT_LIBSTDCXX)
   install(FILES
     "${TORCH_TENSORRT_LIBSTDCXX}"

@@ -78,7 +78,6 @@ public:
 
     ob::Cost stateCost(const ob::State *s) const
     {
-        // ROS_INFO_STREAM("Running social comfort model");
         std::shared_ptr<LocalGridMapStateValidityCheckerSE2> state_vality_checker =
             std::static_pointer_cast<LocalGridMapStateValidityCheckerSE2>(si_->getStateValidityChecker());
         return ob::Cost(state_vality_checker->checkExtendedSocialComfort(s, si_));
@@ -118,14 +117,11 @@ public:
 
             si_->freeState(test1);
 
-            // ROS_INFO_STREAM("Total cost: " << totalCost);
 
             return totalCost;
         }
         else
         {
-            // ROS_INFO_STREAM("Trapezoid cost: " << this->trapezoid(this->stateCost(s1), this->stateCost(s2),
-            //                                                       si_->distance(s1, s2)));
             return this->trapezoid(this->stateCost(s1), this->stateCost(s2), si_->distance(s1, s2));
         }
     }
@@ -157,7 +153,6 @@ public:
 
     ob::Cost stateCost(const ob::State *s) const
     {
-        // ROS_INFO_STREAM("Running social costmap model");
         std::shared_ptr<GridMapStateValidityCheckerR2> state_vality_checker =
             std::static_pointer_cast<GridMapStateValidityCheckerR2>(si_->getStateValidityChecker());
         return ob::Cost(state_vality_checker->checkSocialHeatmap(s, si_));
@@ -197,14 +192,11 @@ public:
 
             si_->freeState(test1);
 
-            // ROS_INFO_STREAM("Total cost: " << totalCost);
 
             return totalCost;
         }
         else
         {
-            // ROS_INFO_STREAM("Trapezoid cost: " << this->trapezoid(this->stateCost(s1), this->stateCost(s2),
-            //                                                       si_->distance(s1, s2)));
             return this->trapezoid(this->stateCost(s1), this->stateCost(s2), si_->distance(s1, s2));
         }
     }

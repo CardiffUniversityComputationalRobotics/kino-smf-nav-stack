@@ -1,22 +1,26 @@
-# Fedback Social Comfort Robot Navigation Framework
+# Kino-SMF: Kinodynamic Social Multilayer Feedback Navigation
 
-This is an online social robot navigation framework for indoor social scenarios that uses a Social Heatmap to represent crowded areas in an environment and also uses a multilayer technique for the planning module.
+Kino-SMF is a ROS 2 navigation stack for robots that move among people in indoor environments. It plans in two layers that feed into each other, under the kinodynamic constraints of the robot:
 
-It is composed of four different packages:
+- a **global planner** (RRT\*) finds a path through the map that avoids crowded areas, using a social heatmap built from the people seen over time;
+- a **local kinodynamic planner** (SST) follows that path while keeping the people around comfortable. It gets feedback from the global path, from its own previous solution, and from a CNN that predicts where near-optimal positions and headings lie (learning-informed sampling).
 
-- `kino_smf_move_base_control`: it is a simple differential control method.
-- `kino_smf_move_base_mapping`: is in charge of the perception of the space.
-- `kino_smf_move_base_planning`: responsible for finding solution paths for the navigation query requested.
-- `kino_smf_move_base_msgs`: contains the messages needed for the framework and the start-goal queries.
+It is composed of four packages:
 
-To run the framework, there is a launch file example in every package with example configurations.
+- `kino_smf_move_base_mapping`: the world model, a 3D map (OctoMap) and a multilayer grid map with the obstacles, the people and the social heatmap.
+- `kino_smf_move_base_planning`: the global and local planners.
+- `kino_smf_move_base_control`: a path follower for differential-drive robots.
+- `kino_smf_move_base_msgs`: the message and action definitions of the stack.
+
+Each package has a launch file and an example configuration, see [Running](#running).
 
 ![FrameworkConnections](https://i.imgur.com/JgMGqJW.png)
 
-- [Fedback Social Comfort Robot Navigation Framework](#fedback-social-comfort-robot-navigation-framework)
+- [Kino-SMF: Kinodynamic Social Multilayer Feedback Navigation](#kino-smf-kinodynamic-social-multilayer-feedback-navigation)
   - [Installation](#installation)
     - [Requirements](#requirements)
     - [Building](#building)
+    - [Running](#running)
   - [World Modeling (`kino_smf_move_base_mapping`)](#world-modeling-kino_smf_move_base_mapping)
     - [Parameters](#parameters)
     - [Subscribers](#subscribers)
@@ -27,11 +31,12 @@ To run the framework, there is a launch file example in every package with examp
     - [Parameters](#parameters-1)
     - [Subscribers](#subscribers-1)
     - [Publishers](#publishers-1)
-    - [Actions](#actions)
+    - [Services](#services-1)
   - [Path Following Control (`kino_smf_move_base_control`)](#path-following-control-kino_smf_move_base_control)
     - [Parameters](#parameters-2)
     - [Subscribers](#subscribers-2)
     - [Publishers](#publishers-2)
+  - [Citation](#citation)
 
 ## Installation
 
@@ -79,129 +84,228 @@ The configure step of the planner prints the libraries it found (`kino_smf:` lin
 - Torch-TensorRT is used when found: `-DKINO_SMF_TORCH_TENSORRT=AUTO` (default), `ON` (required) or `OFF`.
 - When the prebuilt Torch-TensorRT needs a newer `libstdc++` than the system one, a newer one (e.g. the one shipped with Nsight Compute) is linked and installed next to the executable. `-DTORCH_TENSORRT_LIBSTDCXX=/path/to/libstdc++.so.6` forces one.
 
+### Running
+
+Each package has a launch file that starts its node with the example configuration of its `config` folder. Start them in this order, once the robot or the simulation is running: the mapper stops if it cannot get the transforms from `robot_frame` to the sensor frames within about 10 s.
+
+```bash
+source ~/ros2_ws/install/setup.bash
+ros2 launch kino_smf_move_base_mapping kino_smf_move_base_mapping.launch.py
+ros2 launch kino_smf_move_base_planning kino_smf_move_base_planning.launch.py
+ros2 launch kino_smf_move_base_control kino_smf_move_base_control.launch.py
+```
+
+Copy the configurations, adapt the topics, frames and velocity limits to your robot, and pass them with `mapping_config_file:=<file>`, `planning_config_file:=<file>` and `control_config_file:=<file>`. In simulation, set `use_sim_time: true` in them. The example configurations connect the three nodes, and take the navigation goals (`geometry_msgs/msg/PoseStamped`) on `/goal_pose`, where the 2D Goal Pose tool of RViz publishes them.
+
 ## World Modeling (`kino_smf_move_base_mapping`)
 
-This package is in charge of the perception for the robot. For that, a depth camera is used, which helps to generate a 3D map of the space by using Octomap.
-
-This 3D map is combined in a multilayer GridMap with the position of the social agents detected in the space.
-
-Alditionally, this package also provides an idea of the crowded areas in the social environment.
+This package is the perception of the robot. It builds a 3D map of the space with OctoMap from a laser scan and a point cloud (e.g. from a depth camera), and combines it in a multilayer grid map with the people around the robot: the obstacles, the comfort space of the people and a social heatmap of the crowded areas.
 
 ### Parameters
 
-- resolution (double, default: 1.0)
-
-  Octomap and Grid Map resolution.
-
 - map_frame (string, default: "map")
+
+  Frame of the maps.
 
 - fixed_frame (string, default: "fixed_frame")
 
-  Fixed frame considered for the mapping, can be `odom` for example.
+  Fixed frame in which the sensor data is integrated, e.g. `odom`.
 
-- robot_frame (string, default: "/robot_frame")
+- robot_frame (string, default: "robot_frame")
 
-  Base frame considered from the robot for the mapping.
+  Base frame of the robot.
 
-- oflline_octomap_path (string, default: "")
+- resolution (double, default: 1.0)
 
-  If defined, then the given map is used and no ther mapping is done.
+  Resolution of the OctoMap and of the grid map [m].
 
-- visualize_free_space (bool, default: True)
+- offline_octomap_path (string, default: "")
 
-  Wether you would like to see the 3D map and grid_map. If `False`, nothing is published at `/kino_smf_move_base_mapping/social_grid_map` and `/kino_smf_move_base_mapping/octomap_map`.
+  If set, this OctoMap (`.bt`) is used and no mapping is done.
 
 - mapping_max_range (double, default: 5.0)
 
-  Maximum distance to generate the 3D map from the obtained depth points.
+  Maximum range of the sensor data used to build the map [m].
 
-- odometry_topic (string, default: "/odometry_topic")
+- min_z_pc (double, default: 0.05)
+
+  Obstacles are mapped above this height [m], and above `min_z_pc` + `pc_min_z_offset` for the point cloud.
+
+- max_z_pc (double, default: 1.0)
+
+  The point cloud maps obstacles below this height [m].
+
+- visualize_free_space (bool, default: false)
+
+  Publish the maps on `octomap_map` and `social_grid_map`.
 
 - rviz_timer (double, default: 0.0)
 
-  The time delay to publish messages to RViz. Not used if `visualize_free_space` is `False`.
+  Period of the visualization topics [s].
 
-- point_cloud_topics (list: string, default: empty)
+- odometry_topic (string, default: "/odometry_topic")
 
-  List of pointcloud topics used to generate the 3D map.
+  Odometry of the robot.
 
-- point_cloud_frames (list: string, default: empty)
+- erase_map_topic (string, default: "erase_map")
 
-  List of frames from pointcloud topics in order respectively.
+  A `true` on this topic clears the map.
+
+- laser_scan_topic (string, default: "")
+
+  Laser scan used to build the map. Both sensors are needed when mapping online.
+
+- laser_scan_frame (string, default: "")
+
+  Frame of the laser scan. The node waits at start-up for its transform to `robot_frame`.
+
+- minimum_range (double, default: -1.0)
+
+  Laser returns closer than this are ignored [m]. -1.0 disables it.
+
+- apply_filter (bool, default: false)
+
+  Remove isolated single returns from the laser scan.
+
+- add_max_ranges (bool, default: false)
+
+  Use the laser readings without a return to clear free space.
+
+- laser_zero_is_no_return (bool, default: false)
+
+  Count 0.0 laser ranges as readings without a return.
+
+- point_cloud_topic (string, default: "")
+
+  Point cloud (e.g. from a depth camera) used to build the map.
+
+- point_cloud_frame (string, default: "")
+
+  Frame of the point cloud. The node waits at start-up for its transform to `robot_frame`.
+
+- pc_min_z_offset (double, default: 0.2)
+
+  The point cloud only maps above `min_z_pc` + this offset [m].
+
+- pc_max_obstacle_range (double, default: 3.5)
+
+  Points farther than this only clear free space [m].
+
+- pc_voxel_min_points (int, default: 3)
+
+  Points a voxel needs in one point cloud to be marked as occupied, which filters out noise.
+
+- pc_range_noise (double, default: 0.004)
+
+  Depth noise of the point cloud, sigma = `pc_range_noise` x range². Free space is only cleared up to 3 sigma before each point.
+
+- prob_hit (double, default: 0.7), prob_miss (double, default: 0.4)
+
+  Occupancy probability of a voxel that a return hits, and of a voxel that a ray goes through.
+
+- clamping_thres_min (double, default: 0.1192), clamping_thres_max (double, default: 0.971)
+
+  Bounds of the occupancy probability of a voxel.
+
+- occupancy_thres (double, default: 0.75)
+
+  Occupancy probability above which a voxel is an obstacle.
+
+- obstacle_decay_time (double, default: 0.0)
+
+  Occupied voxels that are not observed for this long are cleared [s]. 0.0 disables it.
 
 - social_agents_topic (string, default: "/pedsim_simulator/simulated_agents")
 
-  Topic with social agents states.
+  States of the people around the robot.
 
 - social_agent_radius (double, default: 0.4)
 
-  Radius considered for the social agents.
+  Radius of a person [m].
 
-- social_relevance_validity_checking (bool, default: False)
+- agent_filter_radius (double, default: 0.6)
 
-  Whether or not it is desired to only consider the relevant agents.
+  Sensor returns this close to a person only clear free space, so that people are not mapped as obstacles [m].
 
-- robot_distance_view_max (double, default: 6.0)
+- social_relevance_validity_checking (bool, default: false)
 
-  Maximum distance for the robot to consider social agents.
+  Only consider the people in the field of view of the robot (the relevant agents).
 
-- robot_distance_view_min (double, default: 1.5)
+- robot_distance_view_max (double, default: 6.0), robot_distance_view_min (double, default: 1.5)
 
-  Mininum distance for the robot to consider social agents.
+  Range of the field of view [m]. It grows with the speed of the robot, from the minimum when stopped to the maximum at `robot_velocity_threshold`.
 
 - robot_angle_view (double, default: 1.57)
 
-  Maximum angle in which the social agents are considered from the field of view of the robot. Defined in radians.
+  A person is in the field of view when within this angle of the heading of the robot, on either side [rad].
 
 - robot_velocity_threshold (double, default: 0.3)
 
-  Maximum velocity that the robot can have.
+  Speed of the robot at which the field of view reaches `robot_distance_view_max` [m/s].
 
-- social_heatmap_decay_factor (double, default: 65)
+- social_heatmap_decay_factor (double, default: 65.0)
 
-  It is recommended a value in between 60 and 75.
+  How fast the social heatmap forgets: a person seen t seconds ago weighs 100·exp(−factor·t/60).
+
+- social_comfort_amplitude (double, default: 6.0)
+
+  Amplitude of the personal space cost around each person.
 
 ### Subscribers
 
-The name of the subscribers' topics are just defined as an example, but they may be configured using the parameters defined before.
+A topic written as a parameter name is set by that parameter.
 
-- /pedsim_simulator/simulated_agents ([pedsim_msgs/AgentStates](https://github.com/CardiffUniversityComputationalRobotics/pedsim_ros/blob/noetic-devel/pedsim_msgs/msg/AgentStates.msg))
+- `social_agents_topic` (`pedsim_msgs/msg/AgentStates`)
 
-  Position, orientation, velocity and other states of the social agents.
+  Position, orientation and velocity of the people.
 
-- /pepper/camera/depth/points ([sensor_msgs/PointCloud2](http://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/PointCloud2.html))
+- `odometry_topic` (`nav_msgs/msg/Odometry`)
 
-  Depth points from depth camera.
+  Odometry of the robot.
 
-- /pepper/odom_groundtruth ([nav_msgs/Odometry](http://docs.ros.org/en/noetic/api/nav_msgs/html/msg/Odometry.html))
+- `laser_scan_topic` (`sensor_msgs/msg/LaserScan`) and `point_cloud_topic` (`sensor_msgs/msg/PointCloud2`)
 
-  Robot odometry (in this case it was Pepper robot).
+  Sensor data used to build the map.
+
+- `erase_map_topic` (`std_msgs/msg/Bool`)
+
+  Clears the map on `true`.
 
 ### Publishers
 
-The name of the publishers' topics are just defined as an example, but they may be configured using the parameters defined before.
+- `octomap_map` (`visualization_msgs/msg/MarkerArray`)
 
-- /kino_smf_move_base_mapping/octomap_map ([visualization_msgs/MarkerArray](http://docs.ros.org/en/noetic/api/visualization_msgs/html/msg/MarkerArray.html))
+  The 3D map, for visualization.
 
-  Visual representation of the 3D map created.
+- `social_grid_map` (`grid_map_msgs/msg/GridMap`)
 
-- /kino_smf_move_base_mapping/social_grid_map ([grid_map_msgs/GridMap](http://docs.ros.org/en/kinetic/api/grid_map_msgs/html/msg/GridMap.html))
+  The grid map, for visualization.
 
-  Grid map with 4 layers, one for obstacles and one including obstacles and social agents, one for comfort and another for social heatmap.
+- `relevant_agents` (`pedsim_msgs/msg/AgentStates`)
+
+  The people in the field of view of the robot, used by the planner.
 
 ### Services
 
-- /kino_smf_move_base_mapping/get_grid_map ([grid_map_msgs/GetGridMap](http://docs.ros.org/en/indigo/api/grid_map_msgs/html/srv/GetGridMap.html))
+- `get_grid_map` (`grid_map_msgs/srv/GetGridMap`)
 
-  Fetches the grid map from the World Modeling.
+  Returns the grid map, used by the planner.
+
+- `get_binary` (`octomap_msgs/srv/GetOctomap`)
+
+  Returns the 3D map.
+
+- `save_binary` and `save_full` (`std_srvs/srv/Empty`)
+
+  Save the 3D map in the home directory, as `map_laser_octomap.bt` (binary) or `map_laser_octomap.ot` (full probabilities).
 
 ## Online Social Robot Path Planning (`kino_smf_move_base_planning`)
 
-This package is in charge of finding socially acceptable solution paths for the robot to follow.
+This package finds socially acceptable paths for the robot. In every planning cycle, the global planner plans to the goal over the whole map, and the local kinodynamic planner plans the motions of the robot towards a local goal on the global path, guided by the CNN.
 
 ### Training and optimising the CNN
 
-The planner guides its sampling with one CNN (`XYYawCNN`, a ResNet-50 trunk with two heads). On a 10 m x 10 m grid around the robot (100 x 100 cells of 0.1 m), it predicts where near-optimal paths pass (`xy`) and with which heading (`yaw`). The planner loads it from the `xy_yaw_model_path` parameter (default `~/tidup_models/model_xy_yaw_trt_fp16.ts`, a leading `~` is expanded). The scripts below are in [`kino_smf_move_base_planning/scripts`](kino_smf_move_base_planning/scripts); the other scripts there are evaluations and earlier experiments.
+The planner guides its sampling with one CNN (`XYYawCNN`, a ResNet-50 trunk with two heads). On a 10 m x 10 m grid around the robot (100 x 100 cells of 0.1 m), it predicts where near-optimal paths pass (`xy`) and with which heading (`yaw`). The planner loads it from the `xy_yaw_model_path` parameter (default `~/kino_smf_models/model_xy_yaw_trt_fp16.ts`, a leading `~` is expanded). The scripts below are in [`kino_smf_move_base_planning/scripts`](kino_smf_move_base_planning/scripts); the other scripts there are evaluations and earlier experiments.
 
 **Dataset.** Each sample is three 100 x 100 grayscale PNG files named `<YYYY-MM-DD>_<HH-MM-SS>_<start yaw>_<goal yaw>.png`, with the yaws in radians in [0, 2π). A pixel stores value / scale x 255:
 
@@ -237,201 +341,273 @@ Both build a static batch-1 FP16 engine (`--precision tf32` or `fp32_strict` for
 
 ### Parameters
 
-All of the following parameters have to be defined since they have no default values.
+- world_frame (string, default: "map")
 
-- world_frame (string)
+  Frame in which the planning is done.
 
-  Main parent frame to be used as reference.
+- planner_name (string, default: "RRTstarMod")
 
-- planner_name (string)
+  Global planner: `RRT`, `RRTstar`, `RRTstarMod` or `PRMstar`.
 
-  Planner to be used for global, can be RRT, RRTstar or PRMstar.
+- optimization_objective (string, default: "SocialHeatmap")
 
-- local_planner_name (string)
+  Objective of the global planner: `PathLength` or `SocialHeatmap`.
 
-  Planner to be used for local, can be RRT, RRTstar or PRMstar, InformedRRTstarMod, InformedRRTstar.
+- planning_bounds_x (double list, default: [-50.0, 50.0]), planning_bounds_y (double list, default: [-50.0, 50.0])
 
-- planning_bounds_x (list: [x_min, x_max])
+  Planning bounds, [min, max] in each axis [m].
 
-  Limits for planning in the X axis.
+- dynamic_bounds (bool, default: true)
 
-- planning_bounds_y (list: [y_min, y_max])
+  Fit the planning bounds to the start and goal of each navigation query.
 
-  Limits for planning in the Y axis.
+- timer_period (double, default: 0.52)
 
-- dynamic_bounds (bool)
+  Period of the planning cycle [s].
 
-  Whether it is wanted to change the planning bounds dinamically depending on the navigation query.
+- solving_time (double, default: 0.5)
 
-- start_state (list, [X, Y, Yaw])
+  Planning time of a cycle, shared by the global and local planners [s].
 
-  Define start state for navigation query if the action is not going to be used.
+- global_time_percent (double, default: 10.0)
 
-- goal_state (list, [X, Y, Yaw])
+  Share of `solving_time` given to the global planner [%].
 
-  Define goal state for navigation query if no action is used.
+- reuse_last_best_solution (bool, default: true)
 
-- timer_period (double)
+  The global planner starts from its last best solution.
 
-  Controls the time for sleeps in the node.
+- opport_collision_check (bool, default: true)
 
-- solving_time (double)
+  Use opportunistic collision checking.
 
-  Time given to the planner to solve the navigation query, both for the global and the local layer.
+- motion_cost_interpolation (bool, default: false)
 
-- opport_collision_check (bool)
+  Interpolate the cost along each motion.
 
-  Whether it is wanted to use opportunistic collision checking or not.
+- xy_goal_tolerance (double, default: 0.1), yaw_goal_tolerance (double, default: 0.75)
 
-- reuse_last_best_solution (bool)
+  Position [m] and heading [rad] tolerance of the goal.
 
-  Whether it is wanted to apply the reuse of the last best known solution for the global planner.
+- robot_base_radius (double, default: 0.35)
 
-- local_reuse_last_best_solution (bool)
+  Radius of the base of the robot, for collision checking [m].
 
-  Whether it is wanted to apply the reuse of the last best known solution for the local planner.
+- visualize_tree (bool, default: false)
 
-- optimization_objective (string)
+  Publish the tree of the planner for visualization.
 
-  Defines which optimization objective to use is desired for the global planner. Currently, only supported PathLength and SocialHeatmap.
+- local_planner_name (string, default: "SST")
 
-- local_optimization_objective (string)
+  Local kinodynamic planner: `SST` or `RRT`.
 
-  Defines which optimization objective to use is desired for the local planner. Currently, only supported PathLength and SocialComfort.
+- local_optimization_objective (string, default: "SocialComfort")
 
-- motion_cost_interpolation (bool)
+  Objective of the local planner: `PathLength`, `SocialHeatmap` or `SocialComfort`.
 
-  If motion cost interpolation is desired.
+- local_path_range (double, default: 4.0)
 
-- xy_goal_tolerance (double)
+  Distance along the global path from the robot to the local goal [m].
 
-  Tolerance in the XY axis for the global goal state.
+- local_xy_goal_tolerance (double, default: 1.0)
 
-- local_xy_goal_tolerance (double)
+  Position tolerance of the local goal [m].
 
-  Tolerance in the XY axis for the local goal state.
+- local_reuse_last_best_solution (bool, default: true)
 
-- visualize_tree: (bool)
+  The local planner starts from its last best solution.
 
-  Whether it is desired to visualize or not the tree generated by the planner.
+- local_use_social_heatmap (bool, default: false)
 
-- grid_map_service (string)
+  The local planner also takes the social heatmap into account.
 
-  Service name to get the GridMap.
+- max_trans_vel (double, default: 0.3), max_rot_vel (double, default: 1.2)
 
-- control_active_topic (string)
+  Linear [m/s] and angular [rad/s] velocity limits of the local planner.
 
-  Topic to communicate with the control module to know when control is ready.
+- odometry_topic (string, default: "/odom")
 
-- robot_base_radius (double)
+  Odometry of the robot.
 
-  Radius of the base of the robot to be considered for the planning.
+- query_goal_topic (string, default: "/kino_smf_move_base_planner/query_goal")
 
-- odometry_topic (string)
+  Navigation goals.
 
-- query_goal_topic (string)
+- solution_path_topic (string, default: "/kino_smf_move_base_planner/solution_path")
 
-  Topic to request a query without using actions.
+  Path sent to the controller.
 
-- goto_action (string)
+- grid_map_service (string, default: "/get_grid_map")
 
-  Action name to run a navigation query.
+  Service of the mapper that returns the grid map.
 
-- local_path_range (double)
+- xy_yaw_model_path (string, default: "~/kino_smf_models/model_xy_yaw_trt_fp16.ts")
 
-  Distance from the robot position to the decided local goal.
+  CNN model, see [Training and optimising the CNN](#training-and-optimising-the-cnn). A leading `~` is expanded.
 
-- global_time_percent (double)
+- use_position_cnn (bool, default: true)
 
-  Percentage given to the global planner from the time budget.
+  Guide the sampling of the local planner with the positions predicted by the CNN. The CNN is only loaded when this is true.
+
+- use_orientation_cnn (bool, default: true)
+
+  Also take the headings of the samples from the CNN.
+
+- rejection_chance (double, default: 0.5)
+
+  Probability of checking a sample against the positions predicted by the CNN, and rejecting it when it is outside of them.
+
+- orientation_chance (double, default: 1.0)
+
+  Probability of taking the heading of a sample from the CNN.
 
 ### Subscribers
 
-The name of the subscribers' topics are just defined as an example, but they may be configured using the parameters defined before.
+A topic written as a parameter name is set by that parameter.
 
-- /kino_smf_move_base_planner/query_goal ([geometry_msgs/PoseStamped](http://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/PoseStamped.html))
-- /pepper/odom_groundtruth ([nav_msgs/Odometry](http://docs.ros.org/en/noetic/api/nav_msgs/html/msg/Odometry.html))
+- `query_goal_topic` (`geometry_msgs/msg/PoseStamped`)
 
-  Robot odometry.
+  Navigation goals.
 
-- /control_active_topic ([std_msgs/Bool](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Bool.html))
+- `odometry_topic` (`nav_msgs/msg/Odometry`)
+
+  Odometry of the robot.
+
+- `relevant_agents` (`pedsim_msgs/msg/AgentStates`)
+
+  The people in the field of view of the robot, from the mapper.
+
+- `stop_motion` (`std_msgs/msg/Bool`)
+
+  Cancels the current goal on `true`.
 
 ### Publishers
 
-The name of the publishers' topics are just defined as an example, but they may be configured using the parameters defined before.
+- `solution_path_topic` (`nav_msgs/msg/Path`)
 
-- /kino_smf_move_base_planner/kino_smf_move_base_solution_path ([kino_smf_move_base_msgs/Path2D](https://github.com/CardiffUniversityComputationalRobotics/smf-nav-stack/blob/world_modeling/kino_smf_move_base_msgs/msg/Path2D.msg))
+  Path for the controller to follow.
 
-  Solution path found by the planner. It is passed to the control module.
+- `solution_path` and `local_solution_path` (`visualization_msgs/msg/Marker`)
 
-- /kino_smf_move_base_planner/smf_num_nodes ([std_msgs/Int32](http://docs.ros.org/en/melodic/api/std_msgs/html/msg/Int32.html))
+  Global and local paths, for visualization.
 
-  Number of valid nodes sampled by the local planner.
+- `query_goal_pose_rviz` (`geometry_msgs/msg/PoseStamped`) and `query_goal_radius_rviz` (`visualization_msgs/msg/Marker`)
 
-- /kino_smf_move_base_planner/query_goal_pose_rviz ([geometry_msgs/PoseStamped](http://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/PoseStamped.html))
+  Current goal and its tolerance, for visualization.
 
-  Shows in RViz the query pose requested to the planner.
+- `global_planner_bounds` (`visualization_msgs/msg/Marker`)
 
-- /kino_smf_move_base_planner/query_goal_radius_rviz ([visualization_msgs/Marker](http://docs.ros.org/en/noetic/api/visualization_msgs/html/msg/Marker.html))
+  Bounds of the global planner, for visualization.
 
-  Shows in RViz the radius of the query requested to the planner.
+- `kino_smf_num_nodes` (`std_msgs/msg/Int32`)
 
-- /kino_smf_move_base_planner/solution_path ([visualization_msgs/Marker](http://docs.ros.org/en/noetic/api/visualization_msgs/html/msg/Marker.html))
+  Number of nodes of the local planner.
 
-  Visual solution path to be seen in RViz.
+- `goal_reached` (`std_msgs/msg/Bool`)
 
-### Actions
+  `true` when the goal is reached.
 
-- `/goto_action` ([kino_smf_move_base_msgs/GoTo2D](https://github.com/CardiffUniversityComputationalRobotics/smf-nav-stack/blob/world_modeling/kino_smf_move_base_msgs/action/Goto2D.action))
+- `sweep_motion` (`std_msgs/msg/Bool`)
 
-  Action to request navigation query. The name of the action server depends on the parameter `goto_action`.
+  Asks the controller to turn the robot in place when a navigation query starts, to see around it.
+
+### Services
+
+- Calls `grid_map_service` (`grid_map_msgs/srv/GetGridMap`) to get the grid map of the mapper.
 
 ## Path Following Control (`kino_smf_move_base_control`)
 
-This module is in charge of sending the velocities to the robot according to the path obtained so that the robot goes through that path.
+This package sends the velocity commands that make a differential-drive robot follow the path of the planner.
 
 ### Parameters
 
-- max_vel (double, default: 0.1)
+- max_trans_vel (double, default: 0.25), max_rot_vel (double, default: 1.5)
 
-  Maximum velocity the robot can have in the X axis.
+  Linear [m/s] and angular [rad/s] velocity limits.
 
-- min_vel (double, default: 0.05)
+- goal_tolerance (double, default: 0.1)
 
-  Minimum velocity for the robot to move in the X axis.
+  Distance to the goal at which it is reached [m].
 
-- max_turn_rate (double, default: 0.5)
+- robot_frame (string, default: "base_footprint")
 
-  Maximum velocity with which the robot can rotate.
+  Base frame of the robot.
 
-- min_turn_rate (double, default: 0.5)
+- odometry_topic (string, default: "/odom")
 
-  Minimum velocity for the robot to rotate.
+  Odometry of the robot.
 
-- controller_hz (double, default: 100)
+- query_goal_topic (string, default: "/goal_pose")
 
-  Frequency in which velocities are sent
+  Navigation goals.
 
-- control_path_topic (string, default: "/control_path_topic")
+- control_path_topic (string, default: "/path")
 
-  Topic in which the desired path to follow is published.
+  Path to follow, the `solution_path_topic` of the planner.
 
-- control_output_topic (double, default: "/control_output_topic")
+- control_output_topic (string, default: "/cmd_vel")
 
-  Topic in which the velocities are published.
+  Velocity commands.
 
-- odometry_topic (string, default: "/odometry_topic")
+- stop_motion_topic (string, default: "/stop_motion")
+
+  Stops the robot on `true`.
+
+- sweep_motion_topic (string, default: "/sweep_motion")
+
+  Turns the robot in place, one full turn, on request of the planner.
 
 ### Subscribers
 
-The name of the subscribers' topics are just defined as an example, but they may be configured using the parameters defined before.
+A topic written as a parameter name is set by that parameter.
 
-- /kino_smf_move_base_planner/kino_smf_move_base_solution_path ([kino_smf_move_base_msgs/Path2D](https://github.com/CardiffUniversityComputationalRobotics/smf-nav-stack/blob/world_modeling/kino_smf_move_base_msgs/msg/Path2D.msg))
-- /pepper/odom_groundtruth ([nav_msgs/Odometry](http://docs.ros.org/en/noetic/api/nav_msgs/html/msg/Odometry.html))
+- `control_path_topic` (`nav_msgs/msg/Path`)
+
+  Path to follow.
+
+- `query_goal_topic` (`geometry_msgs/msg/PoseStamped`)
+
+  Navigation goals.
+
+- `odometry_topic` (`nav_msgs/msg/Odometry`)
+
+  Odometry of the robot.
+
+- `stop_motion_topic` and `sweep_motion_topic` (`std_msgs/msg/Bool`)
+
+  Stop and in-place turn requests.
+
+- `/scan` (`sensor_msgs/msg/LaserScan`)
+
+  Laser scan used to detect the obstacles close to the robot.
 
 ### Publishers
 
-The name of the publishers' topics are just defined as an example, but they may be configured using the parameters defined before.
+- `control_output_topic` (`geometry_msgs/msg/Twist`)
 
-- /control_active_topic ([std_msgs/Bool](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Bool.html))
-- /pepper/cmd_vel ([geometry_msgs/Twist](http://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/Twist.html))
+  Velocity commands.
+
+- `/robot_is_moving` (`std_msgs/msg/Bool`)
+
+  Whether the robot is moving.
+
+- `/goal_reached` (`std_msgs/msg/Bool`)
+
+  `true` when the goal is reached.
+
+## Citation
+
+This work is part of the paper [Social Robot Navigation Under Kinodynamic Constraints Using Learning-Informed Sampling for Indoor Environments](https://ieeexplore.ieee.org/document/11543254), published in IEEE Robotics and Automation Letters (2026). If you use it, please cite:
+
+```bibtex
+@ARTICLE{Silva2026,
+  author={Silva, Steven and Romero-Cano, Victor and Hernández, Juan David},
+  journal={IEEE Robotics and Automation Letters},
+  title={Social Robot Navigation Under Kinodynamic Constraints Using Learning-Informed Sampling for Indoor Environments},
+  year={2026},
+  volume={11},
+  number={7},
+  pages={9000-9007},
+  keywords={Robots;Modeling;Planning;Convolutional neural networks;Navigation;Path planning;Learning (artificial intelligence);Timing;Social robots;Algorithms;Human-aware motion planning;motion and path planning},
+  doi={10.1109/LRA.2026.3699250}}
+```

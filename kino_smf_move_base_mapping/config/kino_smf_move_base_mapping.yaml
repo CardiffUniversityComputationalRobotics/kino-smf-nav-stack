@@ -1,28 +1,57 @@
-# Mapping
-resolution: 0.2
-map_frame: "map"
-fixed_frame: "odom"
-robot_frame: "base_footprint"
-offline_octomap_path: ""
-# offline_octomap_path: "/home/sasm/pepper_nav_ws/src/pepper_pipeline/map/offline_map_2.bt"
-visualize_free_space: True
-mapping_max_range: 8
-odometry_topic: "/pepper/odom_groundtruth"
-erase_map_topic: "/kino_smf_move_base_mapper/erase_map"
+kino_smf_move_base_mapper:
+  ros__parameters:
+    use_sim_time: false # true in simulation
+    # Mapping
+    resolution: 0.1
+    map_frame: "map"
+    fixed_frame: "odom"
+    robot_frame: "base_footprint"
+    offline_octomap_path: "" # a .bt map to use instead of mapping online
+    visualize_free_space: True
+    mapping_max_range: 8.0
+    odometry_topic: "/odom"
+    erase_map_topic: "/erase_map"
 
-rviz_timer: 1 # 0.0 if no visualization
+    min_z_pc: 0.15
+    max_z_pc: 1.5
 
-point_cloud_topics: ["/pepper/camera/depth/points"]
-point_cloud_frames: ["/CameraDepth_optical_frame"]
+    rviz_timer: 2.0 # 0.0 if no visualization
 
-# social agents config
-social_agents_topic: "/pedsim_simulator/simulated_agents"
-social_agent_radius: 0.4
+    # Laser scan
+    laser_scan_topic: "/scan"
+    laser_scan_frame: "laser"
+    minimum_range: 0.3 # -1.0 if no filtering is required
+    apply_filter: False
+    add_max_ranges: False
+    laser_zero_is_no_return: False
 
-social_relevance_validity_checking: True
-robot_distance_view_max: 8
-robot_distance_view_min: 2
-robot_angle_view: 2
-robot_velocity_threshold: 0.35
+    # Point cloud
+    point_cloud_topic: "/camera/points"
+    point_cloud_frame: "camera_depth_optical_frame"
+    pc_min_z_offset: 0.2
+    pc_max_obstacle_range: 3.5
+    pc_voxel_min_points: 3
+    pc_range_noise: 0.004
 
-social_heatmap_decay_factor: 0.2
+    # Octree sensor model
+    prob_hit: 0.7
+    prob_miss: 0.4
+    clamping_thres_min: 0.1192
+    clamping_thres_max: 0.971
+    occupancy_thres: 0.75
+    obstacle_decay_time: 0.0 # 0.0 keeps obstacles until they are seen free
+
+    # Social agents config
+    social_agents_topic: "/pedsim_simulator/simulated_agents"
+    social_agent_radius: 0.3
+    agent_filter_radius: 0.6
+
+    social_relevance_validity_checking: True
+    robot_distance_view_max: 8.0
+    robot_distance_view_min: 4.0
+    robot_angle_view: 3.1
+    robot_velocity_threshold: 0.3
+
+    social_heatmap_decay_factor: 0.1
+
+    social_comfort_amplitude: 30.0
