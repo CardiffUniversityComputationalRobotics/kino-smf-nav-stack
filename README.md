@@ -97,6 +97,8 @@ ros2 launch kino_smf_move_base_control kino_smf_move_base_control.launch.py
 
 Copy the configurations, adapt the topics, frames and velocity limits to your robot, and pass them with `mapping_config_file:=<file>`, `planning_config_file:=<file>` and `control_config_file:=<file>`. In simulation, set `use_sim_time: true` in them. The example configurations connect the three nodes, and take the navigation goals (`geometry_msgs/msg/PoseStamped`) on `/goal_pose`, where the 2D Goal Pose tool of RViz publishes them.
 
+The example configuration of the planner loads the trained CNN from `~/kino_smf_models/model_xy_yaw_trt_fp16.ts`. Download it from [Zenodo](https://zenodo.org/records/24367228), see [Training and optimising the CNN](#training-and-optimising-the-cnn).
+
 ## World Modeling (`kino_smf_move_base_mapping`)
 
 This package is the perception of the robot. It builds a 3D map of the space with OctoMap from a laser scan and a point cloud (e.g. from a depth camera), and combines it in a multilayer grid map with the people around the robot: the obstacles, the comfort space of the people and a social heatmap of the crowded areas.
@@ -306,6 +308,8 @@ This package finds socially acceptable paths for the robot. In every planning cy
 ### Training and optimising the CNN
 
 The planner guides its sampling with one CNN (`XYYawCNN`, a ResNet-50 trunk with two heads). On a 10 m x 10 m grid around the robot (100 x 100 cells of 0.1 m), it predicts where near-optimal paths pass (`xy`) and with which heading (`yaw`). The planner loads it from the `xy_yaw_model_path` parameter (default `~/kino_smf_models/model_xy_yaw_trt_fp16.ts`, a leading `~` is expanded). The scripts below are in [`kino_smf_move_base_planning/scripts`](kino_smf_move_base_planning/scripts); the other scripts there are evaluations and earlier experiments.
+
+**Dataset and trained model.** The dataset and the trained model of the paper are on [Zenodo](https://zenodo.org/records/24367228). `ral_dataset.zip` is the dataset, in the layout below. `xy_yaw_best_final.pth` is the checkpoint of the trained model, and `model_xy_yaw_trt_fp16.ts`, `model_xy_yaw_trt_tf32.ts` and `model_xy_yaw_trt.ts` are TensorRT models optimised from it. Put the models in `~/kino_smf_models`, where the planner and `optimize_xy_yaw_jetson.py` look for them by default. A TensorRT model only runs on the GPU model and TensorRT version it was built with, so if these do not load on your machine, optimise the checkpoint there (see **Optimise** below).
 
 **Dataset.** Each sample is three 100 x 100 grayscale PNG files named `<YYYY-MM-DD>_<HH-MM-SS>_<start yaw>_<goal yaw>.png`, with the yaws in radians in [0, 2π). A pixel stores value / scale x 255:
 
